@@ -121,7 +121,7 @@ export default function LocationScreen() {
             </Text>
             {currentLocation && !isSameCity(currentLocation, selectedCity) ? (
               <Text style={[styles.gpsNote, { color: colors.textSecondary }]} numberOfLines={2}>
-                GPS: {currentLocation.name} — используется для мечетей и Кыблы
+                GPS: {currentLocation.name} — используется для мечетей и Киблы
               </Text>
             ) : null}
           </View>

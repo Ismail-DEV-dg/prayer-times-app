@@ -1,5 +1,13 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
+import React, { useEffect, useState, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+  Animated,
+  Easing,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -9,17 +17,34 @@ import {
   qiblaBearing,
   fetchMagneticDeclination,
   magnetometerToHeading,
-  circularSmooth,
 } from "../services/qiblaApi";
+import { createLockMachine, signedDelta, LOCK_ANIM_MS } from "../utils/qiblaLock";
 import { Magnetometer } from "expo-sensors";
 
-// Compass tuning. The sensor listener NEVER calls setState directly:
-// it only updates a ref, and a single interval commits the smoothed
-// value to React at a fixed rate. This keeps renders low and removes
-// the jitter/lag of the previous implementation.
-const SENSOR_INTERVAL_MS = 100; // raw sensor rate (only writes a ref)
-const COMMIT_INTERVAL_MS = 100; // React re-render rate
-const SMOOTHING_ALPHA = 0.25; // 0..1: higher = snappier, lower = calmer
+// Qibla screen. The DIRECTION MATH (qiblaBearing, magnetometerToHeading,
+// declination) is unchanged. This screen only renders it differently:
+// a minimal circle, a soft light beam rotating around the center, and a
+// small Kaaba icon on the ring. The user rotates the phone until the
+// beam points at the Kaaba icon — that moment the phone points at the
+// Qibla (same alignment condition as before: heading ≈ bearing).
+//
+// PERFORMANCE MODEL (the previous compass felt like ~30 FPS because it
+// re-rendered React 10x/second and rotated the whole dial via style
+// props). Now:
+//   - the sensor callback does only cheap math and pushes an Animated
+//     target — ZERO setState, ZERO React re-renders during rotation
+//     (not even for the lock badge: it is driven by a native Animated
+//     opacity);
+//   - the beam rotation runs on the NATIVE driver — the UI thread
+//     interpolates at 60 FPS between the JS-pushed targets;
+//   - the beam angle is accumulated UNWRAPPED (never taken modulo 360),
+//     so the 0/360 crossing can never produce a jump;
+//   - the only React state left is coarse: sensor availability, GPS
+//     status, the bearing value and the declination note.
+
+// Sensor + animation tuning.
+const SENSOR_INTERVAL_MS = 30; // raw magnetometer rate (callback = cheap math only)
+const TRACK_ANIM_MS = 90; // native interpolation window per tick (≈3 ticks → continuous motion)
 
 // Whether this device exposes a magnetometer (needed for a live
 // compass). Never fakes availability.
@@ -31,9 +56,14 @@ async function isMagnetometerAvailable() {
   }
 }
 
-// Qibla screen. The direction is computed from the user's CURRENT GPS
-// location — never from the selected city. Without a magnetometer we
-// honestly show the computed bearing angle only, no fake compass.
+// Lock behavior (sustained alignment → hold ~1.5-2 s → release, soft
+// fixation easing, tolerances) lives in the pure state machine
+// utils/qiblaLock.js — unit-tested in Node.
+
+// Dial geometry (single place for the absolutely-positioned children).
+const DIAL_SIZE = 272;
+const DIAL_RADIUS = DIAL_SIZE / 2;
+
 export default function QiblaScreen() {
   const { colors } = useAppTheme();
   const { currentLocation, locationStatus, locateUser } = useAppData();
@@ -43,12 +73,19 @@ export default function QiblaScreen() {
   const [declination, setDeclination] = useState(null);
   const [declinationLoaded, setDeclinationLoaded] = useState(false);
   const [sensorAvailable, setSensorAvailable] = useState(null); // null = checking
-  const [heading, setHeading] = useState(null);
 
+  // Native-driven animation values (untouched by re-renders).
+  const dialAnim = useRef(new Animated.Value(0)).current; // beam rotation, unwrapped degrees
+  const lockGlow = useRef(new Animated.Value(0)).current; // 0 = free, 1 = locked (badge + glow)
+
+  // Sensor-side mutable state — the ONLY things the magnetometer
+  // callback touches (all refs, no React state).
+  const bearingRef = useRef(null);
+  const declinationRef = useRef(null);
   const subscriptionRef = useRef(null);
-  const commitTimerRef = useRef(null);
-  const latestHeadingRef = useRef(null); // last raw (true) heading
-  const smoothHeadingRef = useRef(null); // smoothed heading
+  const prevScreenAngleRef = useRef(null); // last beam angle on screen, 0..360
+  const freeUnwrappedRef = useRef(0); // continuous (unwrapped) beam angle
+  const lockRef = useRef(null); // lock state machine (utils/qiblaLock.js)
 
   const hasPosition = Boolean(currentLocation);
 
@@ -60,14 +97,17 @@ export default function QiblaScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Bearing from real coordinates.
+  // Bearing from real coordinates (UNCHANGED math).
   useEffect(() => {
     if (!hasPosition) return;
-    setBearing(qiblaBearing(currentLocation.latitude, currentLocation.longitude));
+    const b = qiblaBearing(currentLocation.latitude, currentLocation.longitude);
+    setBearing(b);
+    bearingRef.current = b;
     let cancelled = false;
     fetchMagneticDeclination(currentLocation.latitude, currentLocation.longitude).then((value) => {
       if (!cancelled) {
         setDeclination(value);
+        declinationRef.current = value;
         setDeclinationLoaded(true);
       }
     });
@@ -76,10 +116,84 @@ export default function QiblaScreen() {
     };
   }, [hasPosition ? currentLocation.latitude : null, hasPosition ? currentLocation.longitude : null, hasPosition]);
 
+  const pushBeamTarget = (toValue, duration, easing) => {
+    Animated.timing(dialAnim, {
+      toValue,
+      duration,
+      easing,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const lockBeam = () => {
+    Animated.timing(lockGlow, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+    // Softly ease the beam exactly onto the icon and hold it there.
+    const screenAngle = prevScreenAngleRef.current || 0;
+    const frozen = freeUnwrappedRef.current + signedDelta(screenAngle, 0);
+    pushBeamTarget(frozen, LOCK_ANIM_MS, Easing.out(Easing.cubic));
+  };
+
+  const unlockBeam = () => {
+    Animated.timing(lockGlow, {
+      toValue: 0,
+      duration: 300,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  // The whole rotation pipeline. Cheap math only — no setState, so the
+  // React tree never re-renders while the compass is live.
+  const handleSensorTick = (data) => {
+    const bearingNow = bearingRef.current;
+    if (bearingNow == null) return;
+
+    // --- direction math (UNCHANGED formulas) ---
+    const magnetic = magnetometerToHeading(data);
+    const trueHeading =
+      declinationRef.current != null
+        ? (magnetic + declinationRef.current + 360) % 360
+        : magnetic;
+    // Where the Qibla beam points ON SCREEN relative to the phone:
+    // 0° = straight up, at the Kaaba icon.
+    const screenAngle = (bearingNow - trueHeading + 360) % 360;
+
+    // --- unwrapped accumulation (no 0/360 jumps) ---
+    const prev = prevScreenAngleRef.current;
+    prevScreenAngleRef.current = screenAngle;
+    if (prev == null) {
+      freeUnwrappedRef.current = screenAngle;
+      pushBeamTarget(screenAngle, TRACK_ANIM_MS, Easing.linear);
+      if (!lockRef.current) lockRef.current = createLockMachine();
+      return;
+    }
+    freeUnwrappedRef.current += signedDelta(prev, screenAngle);
+
+    // --- lock state machine (pure, unit-tested in Node) ---
+    const wasLocked = lockRef.current ? lockRef.current.locked : false;
+    const locked = lockRef.current.tick(screenAngle);
+    if (!wasLocked && locked) lockBeam(); // just engaged → soft fixation
+    if (wasLocked && !locked) unlockBeam(); // released → free tracking
+
+    if (locked) {
+      // Locked: the beam is eased onto the icon and held there. The
+      // unwrapped tracking above keeps running, so the hand-off back
+      // to free movement is seamless.
+      return;
+    }
+
+    // Free tracking: one native-driven timing per sensor tick.
+    pushBeamTarget(freeUnwrappedRef.current, TRACK_ANIM_MS, Easing.linear);
+  };
+
   // Sensor subscription: ONE listener for this screen, removed on
-  // unmount. The callback only writes a ref — no setState, no object
-  // churn. A separate timer commits the circular-smoothed heading to
-  // React at a fixed, modest rate.
+  // unmount. Re-subscribes when the declination arrives so the true
+  // north mapping is right.
   useEffect(() => {
     let mounted = true;
     isMagnetometerAvailable().then((available) => {
@@ -87,22 +201,8 @@ export default function QiblaScreen() {
       setSensorAvailable(available);
       if (!available || !hasPosition) return;
       Magnetometer.setUpdateInterval(SENSOR_INTERVAL_MS);
-      subscriptionRef.current = Magnetometer.addListener((data) => {
-        const magnetic = magnetometerToHeading(data);
-        const trueHeading = declination != null ? (magnetic + declination + 360) % 360 : magnetic;
-        latestHeadingRef.current = trueHeading;
-      });
+      subscriptionRef.current = Magnetometer.addListener(handleSensorTick);
     });
-
-    commitTimerRef.current = setInterval(() => {
-      const target = latestHeadingRef.current;
-      if (target == null) return;
-      const current = smoothHeadingRef.current;
-      // Circular smoothing: shortest-arc step, correct across 0/360.
-      smoothHeadingRef.current =
-        current == null ? target : circularSmooth(current, target, SMOOTHING_ALPHA);
-      setHeading(smoothHeadingRef.current);
-    }, COMMIT_INTERVAL_MS);
 
     return () => {
       mounted = false;
@@ -110,22 +210,9 @@ export default function QiblaScreen() {
         subscriptionRef.current.remove();
         subscriptionRef.current = null;
       }
-      if (commitTimerRef.current) {
-        clearInterval(commitTimerRef.current);
-        commitTimerRef.current = null;
-      }
-      latestHeadingRef.current = null;
-      smoothHeadingRef.current = null;
     };
-    // Re-subscribe when declination changes so true-north mapping is right.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPosition, declinationLoaded]);
-
-  // Compass rotation: the dial shows north at -heading degrees. When
-  // the phone heading equals the qibla bearing, the qibla marker sits
-  // exactly at the top pointer.
-  const dialRotation = heading != null ? -heading : 0;
-  // Marker position on the rotating dial: at the qibla bearing angle.
-  const markerAngle = bearing != null ? bearing : 0;
 
   // Back guard: never trigger an unhandled GO_BACK; fall back to Home.
   const goBackToHome = () => {
@@ -136,59 +223,19 @@ export default function QiblaScreen() {
     }
   };
 
-  // ---- 360-degree dial: ticks every 5, majors every 30, labels ----
-  // Built once per color change — NOT on every sensor commit.
-  const dialSize = 280;
-  const radius = dialSize / 2 - 26; // labels inside the ticks
-  const ticks = useMemo(() => {
-    const out = [];
-    for (let deg = 0; deg < 360; deg += 5) {
-      const major = deg % 30 === 0;
-      const angleRad = ((deg - 90) * Math.PI) / 180; // 0° at top
-      const x = radius * Math.cos(angleRad);
-      const y = radius * Math.sin(angleRad);
-      out.push(
-        <View
-          key={`t${deg}`}
-          style={[
-            styles.tick,
-            {
-              width: major ? 2.5 : 1,
-              height: major ? 16 : 9,
-              backgroundColor: major ? colors.text : colors.textSecondary,
-              opacity: major ? 0.95 : 0.55,
-              transform: [{ translateX: x }, { translateY: y }, { rotate: `${deg}deg` }],
-            },
-          ]}
-        />
-      );
-      if (major) {
-        // Label sits slightly inside the major tick.
-        const labelRadius = radius - 24;
-        const lx = labelRadius * Math.cos(angleRad);
-        const ly = labelRadius * Math.sin(angleRad);
-        out.push(
-          <Text
-            key={`l${deg}`}
-            style={[
-              styles.tickLabel,
-              { color: colors.textSecondary },
-              { transform: [{ translateX: lx }, { translateY: ly }] },
-            ]}
-          >
-            {deg === 0 ? "N" : `${deg}°`}
-          </Text>
-        );
-      }
-    }
-    return out;
-  }, [colors.text, colors.textSecondary]);
-
-  // Qibla marker on the dial (green), at the qibla bearing angle.
-  const markerRad = ((markerAngle - 90) * Math.PI) / 180;
-  const markerR = radius + 10;
-  const markerX = markerR * Math.cos(markerRad);
-  const markerY = markerR * Math.sin(markerRad);
+  // Native-driven interpolations (rebuilt only on rare re-renders).
+  const rotateDeg = dialAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "1deg"],
+  });
+  const lockHaloOpacity = lockGlow.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 0.14],
+  });
+  const badgeLift = lockGlow.interpolate({
+    inputRange: [0, 1],
+    outputRange: [10, 0],
+  });
 
   const renderCompass = () => {
     if (sensorAvailable === false) {
@@ -203,43 +250,59 @@ export default function QiblaScreen() {
         </View>
       );
     }
-    const aligned =
-      bearing != null && heading != null && Math.abs(((bearing - heading + 540) % 360) - 180) < 3;
     return (
       <View style={styles.compassWrap}>
-        <View style={styles.indicatorWrap}>
-          <View style={[styles.indicator, { backgroundColor: colors.accent }]} />
-        </View>
-        <View style={[styles.compassOuter, { borderColor: colors.border }]}>
-          {/* rotating dial with ticks + qibla marker */}
-          <View style={[styles.dial, { width: dialSize, height: dialSize, transform: [{ rotate: `${dialRotation}deg` }] }]}>
-            {ticks}
-            <View
+        <View style={styles.compass}>
+          {/* clean minimalist ring */}
+          <View style={[styles.ring, { borderColor: colors.border }]} />
+
+          {/* the light beam — the ONLY moving element (native driver) */}
+          <Animated.View style={[styles.beamGroup, { transform: [{ rotate: rotateDeg }] }]}>
+            <View style={[styles.beamHalo, { backgroundColor: colors.accent }]} />
+            <Animated.View
               style={[
-                styles.qiblaMarker,
-                {
-                  backgroundColor: "#22A06B",
-                  transform: [{ translateX: markerX }, { translateY: markerY }, { rotate: `${markerAngle}deg` }],
-                },
+                styles.beamHaloLock,
+                { backgroundColor: colors.accent, opacity: lockHaloOpacity },
               ]}
             />
-            {/* N marker at 0 degrees of the dial */}
-            <View
-              style={[
-                styles.northMarker,
-                { backgroundColor: colors.danger, transform: [{ translateY: -radius - 10 }] },
-              ]}
-            />
-          </View>
-          <View style={[styles.compassCenter, { backgroundColor: colors.textSecondary }]} />
-          {aligned && (
-            <View style={styles.alignedBadge}>
-              <Text style={styles.alignedText}>Кыбла</Text>
+            <View style={[styles.beamSegA, { backgroundColor: colors.accent }]} />
+            <View style={[styles.beamSegB, { backgroundColor: colors.accent }]} />
+            <View style={[styles.beamSegC, { backgroundColor: colors.accent }]} />
+            <View style={[styles.beamSegD, { backgroundColor: colors.accent }]} />
+          </Animated.View>
+
+          {/* soft light in the center (static, layered opacities) */}
+          <View style={[styles.light1, { backgroundColor: colors.accent }]} />
+          <View style={[styles.light2, { backgroundColor: colors.accent }]} />
+          <View style={[styles.light3, { backgroundColor: colors.accent }]} />
+          <View style={[styles.lightCore, { backgroundColor: colors.accent }]} />
+
+          {/* the Kaaba icon — the fixed target on the ring */}
+          <View
+            style={[
+              styles.kaabaChip,
+              { backgroundColor: colors.background, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.kaabaCube}>
+              <View style={styles.kaabaBand} />
             </View>
-          )}
+          </View>
+
+          {/* "Кибла" badge — fades in only while locked (native driver) */}
+          <Animated.View
+            style={[styles.lockBadge, { opacity: lockGlow, transform: [{ translateY: badgeLift }] }]}
+            pointerEvents="none"
+          >
+            <View style={[styles.lockPill, { backgroundColor: colors.accentSoft }]}>
+              <Text style={[styles.lockText, { color: colors.accent }]}>Кибла</Text>
+            </View>
+          </Animated.View>
         </View>
+
         <Text style={[styles.compassHint, { color: colors.textSecondary }]}>
-          Поверните устройство: когда зелёная метка совпадёт с верхним указателем, телефон направлен на Кыблу
+          Вращайте телефон, чтобы совместить световой луч с Каабой — в этот момент
+          телефон направлен на Киблу
         </Text>
       </View>
     );
@@ -266,7 +329,7 @@ export default function QiblaScreen() {
               : "Местоположение недоступно"}
           </Text>
           <Text style={[styles.sensorText, { color: colors.textSecondary, textAlign: "center" }]}>
-            Направление на Кыблу рассчитывается от вашего текущего местоположения.
+            Направление на Киблу рассчитывается от вашего текущего местоположения.
           </Text>
           <TouchableOpacity
             style={[styles.retryButton, { backgroundColor: colors.accent }]}
@@ -283,7 +346,7 @@ export default function QiblaScreen() {
       <View>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Text style={[styles.bearingLabel, { color: colors.textSecondary }]}>
-            Направление на Кыблу
+            Направление на Киблу
           </Text>
           <Text style={[styles.bearingValue, { color: colors.text }]}>
             {bearing != null ? `${Math.round(bearing)}°` : "…"}
@@ -307,7 +370,7 @@ export default function QiblaScreen() {
         <TouchableOpacity onPress={goBackToHome} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Кыбла</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Кибла</Text>
       </View>
       <View style={{ flex: 1, padding: 16, alignItems: "center" }}>{renderContent()}</View>
     </SafeAreaView>
@@ -326,60 +389,129 @@ const styles = StyleSheet.create({
   sensorText: { fontSize: 14, lineHeight: 20, textAlign: "center" },
   retryButton: { marginTop: 10, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
   compassWrap: { alignItems: "center", marginTop: 28 },
-  indicatorWrap: { alignItems: "center" },
-  indicator: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 7,
-    borderRightWidth: 7,
-    borderBottomWidth: 12,
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    marginBottom: 2,
-  },
-  compassOuter: {
-    width: 300,
-    height: 300,
-    borderRadius: 150,
+  compass: { width: DIAL_SIZE, height: DIAL_SIZE },
+  ring: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: DIAL_RADIUS,
     borderWidth: 2,
+  },
+  beamGroup: { position: "absolute", left: 0, top: 0, width: DIAL_SIZE, height: DIAL_SIZE },
+  beamHalo: {
+    position: "absolute",
+    left: DIAL_RADIUS - 4.5,
+    top: 14,
+    width: 9,
+    height: DIAL_RADIUS - 16,
+    borderRadius: 4.5,
+    opacity: 0.1,
+  },
+  beamHaloLock: {
+    position: "absolute",
+    left: DIAL_RADIUS - 7.5,
+    top: 14,
+    width: 15,
+    height: DIAL_RADIUS - 16,
+    borderRadius: 7.5,
+  },
+  beamSegA: {
+    position: "absolute",
+    left: DIAL_RADIUS - 1.5,
+    top: 46,
+    width: 3,
+    height: DIAL_RADIUS - 46,
+    borderRadius: 1.5,
+    opacity: 0.95,
+  },
+  beamSegB: {
+    position: "absolute",
+    left: DIAL_RADIUS - 1.5,
+    top: 34,
+    width: 3,
+    height: 14,
+    borderRadius: 1.5,
+    opacity: 0.72,
+  },
+  beamSegC: {
+    position: "absolute",
+    left: DIAL_RADIUS - 1.5,
+    top: 22,
+    width: 3,
+    height: 14,
+    borderRadius: 1.5,
+    opacity: 0.5,
+  },
+  beamSegD: {
+    position: "absolute",
+    left: DIAL_RADIUS - 1.5,
+    top: 10,
+    width: 3,
+    height: 14,
+    borderRadius: 1.5,
+    opacity: 0.36,
+  },
+  light1: {
+    position: "absolute",
+    left: DIAL_RADIUS - 44,
+    top: DIAL_RADIUS - 44,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    opacity: 0.1,
+  },
+  light2: {
+    position: "absolute",
+    left: DIAL_RADIUS - 30,
+    top: DIAL_RADIUS - 30,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    opacity: 0.16,
+  },
+  light3: {
+    position: "absolute",
+    left: DIAL_RADIUS - 19,
+    top: DIAL_RADIUS - 19,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    opacity: 0.26,
+  },
+  lightCore: {
+    position: "absolute",
+    left: DIAL_RADIUS - 6,
+    top: DIAL_RADIUS - 6,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    opacity: 0.95,
+  },
+  kaabaChip: {
+    position: "absolute",
+    left: DIAL_RADIUS - 16,
+    top: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
   },
-  dial: { position: "relative", alignItems: "center", justifyContent: "center" },
-  tick: { position: "absolute" },
-  tickLabel: {
-    position: "absolute",
-    fontSize: 10,
-    fontWeight: "700",
-    backgroundColor: "transparent",
-  },
-  qiblaMarker: {
-    position: "absolute",
-    width: 5,
+  kaabaCube: {
+    width: 20,
     height: 20,
-    borderRadius: 3,
+    borderRadius: 5,
+    backgroundColor: "#15181D",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    overflow: "hidden",
   },
-  northMarker: {
-    position: "absolute",
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  compassCenter: {
-    position: "absolute",
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  alignedBadge: {
-    position: "absolute",
-    bottom: 40,
-    backgroundColor: "#22A06B",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-  },
-  alignedText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  compassHint: { fontSize: 12, marginTop: 14, textAlign: "center", maxWidth: 300 },
+  kaabaBand: { height: 4, marginTop: 4, marginHorizontal: 2, backgroundColor: "#C9A227" },
+  lockBadge: { position: "absolute", left: 0, right: 0, bottom: 22, alignItems: "center" },
+  lockPill: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 5 },
+  lockText: { fontSize: 13, fontWeight: "800", letterSpacing: 0.6 },
+  compassHint: { fontSize: 12, marginTop: 18, textAlign: "center", maxWidth: 300 },
 });

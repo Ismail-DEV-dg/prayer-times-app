@@ -53,6 +53,7 @@ function load(relPath) {
 
 const qibla = load("services/qiblaApi.js");
 const hijri = load("utils/hijri.js");
+const qiblaLock = load("utils/qiblaLock.js");
 
 // ================= QIBLA BEARING =================
 
@@ -184,6 +185,125 @@ test("magnetometerToHeading: top edge south -> 180°", () => {
 test("magnetometerToHeading: top edge west -> 270°", () => {
   const h = qibla.magnetometerToHeading({ x: 1, y: 0, z: 0 });
   approx(h, 270, 0.01, "west");
+});
+
+// ================= QIBLA LOCK STATE MACHINE (light-beam compass) =================
+
+test("signedDelta: shortest arc, sign, and 0/360 wrap", () => {
+  approx(qiblaLock.signedDelta(10, 20), 10, 0.001, "10->20");
+  approx(qiblaLock.signedDelta(20, 10), -10, 0.001, "20->10");
+  approx(qiblaLock.signedDelta(359, 1), 2, 0.001, "359->1 through 0");
+  approx(qiblaLock.signedDelta(1, 359), -2, 0.001, "1->359 through 0");
+  approx(Math.abs(qiblaLock.signedDelta(180, 0)), 180, 0.001, "180 boundary magnitude");
+  approx(Math.abs(qiblaLock.signedDelta(0, 180)), 180, 0.001, "0->180 boundary magnitude");
+});
+
+test("lock machine: engages after sustained alignment (~150 ms) and holds ~1.6 s", () => {
+  let now = 1000;
+  const m = qiblaLock.createLockMachine(() => now);
+  // First 4 aligned ticks: still free (needs LOCK_CONSECUTIVE_TICKS=5).
+  for (let i = 0; i < 4; i++) {
+    assert(m.tick(1.5) === false, "must not lock before 5 consecutive aligned ticks");
+    now += 30;
+  }
+  // 5th consecutive aligned tick -> locks.
+  assert(m.tick(1.0) === true, "locks on the 5th consecutive aligned tick");
+  // Still locked just before the hold expires.
+  now += qiblaLock.LOCK_HOLD_MS - 40;
+  assert(m.tick(0.5) === true, "stays locked during the hold window");
+  // After the hold expires: released (aligned or not).
+  now += 80;
+  assert(m.tick(0.5) === false, "releases after the hold time");
+});
+
+test("lock machine: releases instantly on noticeable rotation (never feels frozen)", () => {
+  let now = 5000;
+  const m = qiblaLock.createLockMachine(() => now);
+  for (let i = 0; i < 6; i++) m.tick(0);
+  assert(m.locked === true, "locked");
+  now += 100;
+  // User rotates away beyond RELEASE_DEG while locked -> immediate release.
+  assert(m.tick(20) === false, "releases on noticeable rotation during the hold");
+});
+
+test("lock machine: re-arms only after leaving the REARM envelope (no flapping)", () => {
+  let now = 9000;
+  const m = qiblaLock.createLockMachine(() => now);
+  for (let i = 0; i < 6; i++) m.tick(0); // lock
+  now += 2000; // hold expires while aligned
+  assert(m.tick(1) === false, "released by time");
+  // Hovering near the icon (inside REARM_DEG=6 but outside ALIGN_TOL=3):
+  // must NOT re-lock immediately.
+  now += 60;
+  assert(m.tick(5) === false, "no re-lock while hovering inside the rearm envelope");
+  for (let i = 0; i < 8; i++) {
+    now += 30;
+    m.tick(5);
+  }
+  assert(m.locked === false, "still free while hovering");
+  // Leave the envelope, come back and align -> locks again.
+  now += 60;
+  m.tick(10); // beyond REARM_DEG -> re-armed
+  for (let i = 0; i < 4; i++) {
+    now += 30;
+    m.tick(2);
+  }
+  assert(m.locked === false, "not yet (4 ticks)");
+  now += 30;
+  assert(m.tick(1) === true, "re-locks after re-arm + sustained alignment");
+});
+
+test("lock machine: brief misalignment resets the consecutive counter", () => {
+  let now = 20000;
+  const m = qiblaLock.createLockMachine(() => now);
+  for (let i = 0; i < 4; i++) {
+    now += 30;
+    m.tick(1);
+  }
+  now += 30;
+  m.tick(9); // brief excursion beyond ALIGN_TOL
+  now += 30;
+  assert(m.tick(1) === false, "counter reset — needs another 5 aligned ticks");
+  for (let i = 0; i < 3; i++) {
+    now += 30;
+    m.tick(1);
+  }
+  assert(m.locked === false, "still free after 3 ticks");
+  for (let i = 0; i < 2; i++) {
+    now += 30;
+    m.tick(1);
+  }
+  assert(m.locked === true, "locks on the 5th aligned tick after reset");
+});
+
+test("lock machine: alignment tolerance is ±3° (both sides, incl. across 0/360)", () => {
+  let now = 30000;
+  const m = qiblaLock.createLockMachine(() => now);
+  for (let i = 0; i < 6; i++) {
+    now += 30;
+    m.tick(359.5); // -0.5° — aligned
+  }
+  assert(m.locked === true, "locks at 359.5 (just across the 0/360 seam)");
+  now += qiblaLock.LOCK_HOLD_MS + 100;
+  m.tick(1); // released by time
+  now += 60;
+  m.tick(10); // re-arm
+  now += 30;
+  for (let i = 0; i < 5; i++) {
+    now += 30;
+    m.tick(3.0); // exactly at the tolerance edge
+  }
+  assert(m.locked === true, "locks at exactly 3°");
+  now += qiblaLock.LOCK_HOLD_MS + 100;
+  m.tick(0); // released by time
+  now += 60;
+  m.tick(10); // re-arm
+  now += 30;
+  for (let i = 0; i < 8; i++) {
+    now += 30;
+    m.tick(4.5); // beyond the tolerance
+  }
+  assert(m.locked === false, "never locks beyond the tolerance");
 });
 
 // ================= HIJRI DATE =================

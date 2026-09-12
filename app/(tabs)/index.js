@@ -245,7 +245,7 @@ export default function HomeScreen() {
             onPress={() => router.push("/qibla")}
           >
             <Ionicons name="compass-outline" size={22} color={colors.accent} />
-            <Text style={[styles.sectionText, { color: colors.text }]}>Кыбла</Text>
+            <Text style={[styles.sectionText, { color: colors.text }]}>Кибла</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
