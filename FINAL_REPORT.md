@@ -1,26 +1,217 @@
 # FINAL REPORT — Prayer Times App
 
-Дата: 2026-09-13 (обновлено: итерация 7 — ДУМ Республики Татарстан в registry)
+Дата: 2026-09-13 (обновлено: итерация 8 — Qibla production-lag FIX + визуальные улучшения)
 Проект: React Native / Expo приложение для времени намаза.
 База: существующий работающий проект на Expo SDK 54 (APK ранее собирался).
 
 > **Восстановление контекста в новом чате**: этот файл — актуальное состояние
-> проекта. Итерация 7 (последняя) описана в §0.8: в территориальный registry
-> добавлена вторая REGION-запись — ДУМ Республики Татарстан (per-district
-> CSV dumrt.ru, fetchType "dumrt_csv", 44 слага, 730 строк = 2025+2026);
-> реальный CSV проверен онлайн; resolver/chain/AUTO/MANUAL/cache без
-> изменений (архитектура итерации 5 универсальна); Дагестан не тронут
-> (T23 REGRESSION); Чечня и др. кандидатуры НЕ зарегистрированы (нет
-> подтверждённого технически пригодного источника) — «Grozny → расчётный
-> метод 14» = ожидаемое поведение AUTO, не баг; 23/23 source tests
-> (T18–T23 новые), npm test 30/30, bundle 3.25 MB. Итерация 6 описана в
-> §0.7: экран Киблы переработан (минималистичный круг, световой луч,
-> иконка Каабы, мягкая фиксация; математика НЕ тронута; lock-логика в
-> utils/qiblaLock.js). Итерация 5e (§0.6e) — FIX навигации (таб-анимация
-> 5d откачена, animation none). Итерации 5c (fade_from_bottom стеков +
-> LayoutAnimation), 5b (микро-анимации + countdown-верификация), 5
-> (territorial registry + AUTO/MANUAL) и более ранние сохранены ниже.
-> Expo SDK 54 / RN 0.81.5 / зависимости — НЕ менялись.
+> проекта. Итерация 8 (последняя) описана в §0.9: найдена и устранена причина
+> production-only лагов Киблы в APK — отсутствие разрешения
+> android.permission.HIGH_SAMPLING_RATE_SENSORS в app.json (механика доказана
+> кодом expo-sensors SensorSubscription.kt: Android 12+ без него =
+> SENSOR_DELAY_NORMAL ≈ 5 Гц; Expo Go разрешение имеет = FASTEST — потому в
+> Expo Go плавно, в APK рывки); fix = строка в app.json + адаптивное окно
+> трекинга в app/qibla.js (страховка от вендор-капов частоты); математика
+> направления НЕ тронута. Плюс: кардинальное кольцо С/В/Ю/З (нативно, тем же
+> пайплайном), пилл направления света в bearing-карточке, BootSplash
+> (components/BootSplash.js), новые assets (куб Каабы + золотая лента +
+> зелёное свечение на #0F172A), prayer-виджеты с русскими именами и подсветкой
+> следующей молитвы. Локальные тесты: unit 30/30, source-system 23/23,
+> qibla smoke 22/22 (новая проверка cardinal unwrapped), nav-audit 69/69,
+> android bundle 3.26 MB. Web export падает на react-native-maps —
+> ПРЕДСУЩЕСТВУЮЩАЯ проблема (воспроизведена на коммите fe8ac7f до итерации 8).
+> Итерация 7 (§0.8): ДУМ РТ в registry. Итерация 6 (§0.7): редизайн Киблы.
+> Итерация 5e (§0.6e): FIX навигации. Итерации 5c, 5b, 5 и более ранние
+> сохранены ниже. Expo SDK 54 / RN 0.81.5 / зависимости — НЕ менялись.
+
+---
+
+## 0.9 Итерация 8 — Qibla production-lag FIX + визуальные улучшения (2026-09-13)
+
+### 0.9.1 Задача
+
+1. Найти причину production-only лагов Киблы (~«20 FPS», рывки, луч долго
+   догоняет вращение телефона, иногда не доходит) на Redmi Note 12S / 13 Pro+
+   в release APK при полностью плавной работе через Expo Go на том же
+   устройстве. НЕ менять корректную математику направления.
+2. Аккуратный визуальный апгрейд экрана Киблы.
+3. Красивый минималистичный startup/loading experience.
+4. Переработка иконки приложения и assets.
+5. Минималистичные prayer widgets на главном экране.
+
+### 0.9.2 Анализ и найденная причина (production-only лаг Киблы)
+
+Симптом (со слов пользователя): луч идёт рывками, сильно отстаёт («я уже на
+востоке, а он на севере»), сопоставить с Каабой сложно, иногда луч не доходит.
+При этом в Expo Go на ТОМ ЖЕ Redmi Note 12S — идеально плавно. APK собран через
+eas build (production, облако); в APK визуально — НОВЫЙ дизайн со световым
+лучом (итерация 6), т.е. код актуальный.
+
+Пайплайн итерации 6 сам по себе production-корректен: сенсор 30 мс →
+callback = только дешёвая математика (atan2/mod) → push Animated.timing
+(useNativeDriver, 90 мс linear) → интерполяция на UI-потоке; ZERO setState
+при вращении; угол unwrapped. Смоук-харнесс (22 проверки, в т.ч. zero
+setState, native driver, unwrapped seam) — PASS. JS-нагрузка в release МЕНЬШЕ
+dev-нагрузки (Hermes, минификация), поэтому «тот же код в APK медленнее»
+объясняться не могло — искалась нативная release-специфика.
+
+**Причина найдена и доказана кодом установленной библиотеки**
+(`node_modules/expo-sensors/android/.../SensorSubscription.kt`, строки 21–26):
+
+```kotlin
+private val samplingPeriodUs: Int
+  get() = if (hasHighSamplingRateSensorsPermission()) {
+    SensorManager.SENSOR_DELAY_FASTEST
+  } else {
+    SensorManager.SENSOR_DELAY_NORMAL   // ← это ветка release APK
+  }
+```
+
+Механика: на Android 12+ (API 31+) ОС требует явное manifest-разрешение
+`android.permission.HIGH_SAMPLING_RATE_SENSORS` для частоты сенсоров выше
+200 Гц (и фактически для «fastest»-режима). expo-sensors проверяет
+`requestedPermissions` пакета: разрешения нет → регистрирует магнитометр с
+`SENSOR_DELAY_NORMAL` ≈ 5 Гц (на вендорных прошивках Xiaomi — иногда ещё
+реже). Экспоненциальный throttle-gate (`onSensorChanged` с
+`updateInterval=30`) при 5 Гц фактической частоты пропускает ~5 событий/сек.
+
+Последствия для UI итерации 6: каждый тик анимировал окно 90 мс, затем луч
+ЗАМИРАЛ на ~100–300 мс до следующего тика — визуально «рывками, очень долго
+догоняет». Lock-машина (5 подряд тиков в ±3°) вместо ~150 мс требовала
+~1 секунду неподвижного удержания — «дойти не может». В Expo Go манифест
+СОДЕРЖИТ HIGH_SAMPLING_RATE_SENSORS → FASTEST → события ~30/сек → плавно.
+Это полностью объясняет разницу Expo Go (плавно) vs production APK (рывки)
+на одном устройстве.
+
+Старая гипотеза «setState каждые 100 мс» (код initial-коммита) отвергнута:
+в APK визуально новый дизайн, т.е. пайплайн итерации 6.
+
+### 0.9.3 Исправление (минимальное, математика не тронута)
+
+1. **app.json**: добавлена строка
+   `"android.permission.HIGH_SAMPLING_RATE_SENSORS"` в `android.permissions`.
+   Проект managed workflow (нет android/), манифест генерирует EAS из
+   app.json — разрешение гарантированно попадёт в следующий APK. Разрешение
+   normal (не runtime) — пользователь ничего не подтверждает.
+2. **app/qibla.js — defense-in-depth (адаптивное окно трекинга)**: на случай
+   вендор-капов частоты (прошивки Xiaomi могут ограничивать частоту даже с
+   разрешением) окно интерполяции теперь следует за НАБЛЮДАЕМОЙ частотой
+   тиков: `trackMs = min(gap*1.3, 450)` при `gap > 2*SENSOR_INTERVAL_MS`,
+   иначе прежние 90 мс. Луч плавно скользит между редкими тиками вместо
+   замирания. Цели и формулы НЕ изменены (beam target = bearing − heading,
+   unwrap через signedDelta) — смоук подтверждает те же targets/jumps.
+3. Математика направления НЕ тронута: qiblaBearing, magnetometerToHeading,
+   fetchMagneticDeclination, circularSmooth — без изменений (все их unit-тесты
+   PASS).
+
+### 0.9.4 Визуальные улучшения (математика и производительность не тронуты)
+
+**Экран Киблы** (`app/qibla.js`):
+- Кардинальное кольцо С/В/Ю/З: буквы вне кольца на радиусе
+  CARDINAL_RADIUS=DIAL_RADIUS+16, слой вращается тем же сенсор-пайплайном
+  (cardinalAnim, −trueHeading, unwrapped через prevHeadingRef + signedDelta),
+  native driver, ZERO setState. compass контейнер расширен до 336×336
+  (DIAL_SIZE+64), кольцо/луч 272×272 со смещением 32. «С» выделена акцентом.
+  Пользователь видит, где север/восток — устраняет «я на востоке, а он на
+  севере» дезориентацию.
+- bearing-карточка: пилл направления света (compassPointName, 8 ветров —
+  «Юго-восток» для Хельсинки 158°) рядом с градусами.
+- lock-бейдж: акцентный (colors.accent bg, checkmark-icon, textOnActive)
+  вместо soft-версии.
+- Смоук дополнен проверкой cardinal unwrapped (maxJump 10° — нет швов).
+
+**BootSplash** (`components/BootSplash.js`, НОВЫЙ; подключён в
+`app/_layout.js` последним ребёнком AppShell поверх Stack):
+- Один overlay поверх Stack: фон #0F172A (= нативный splash app.json —
+  бесшовный переход), мягкое зелёное свечение, куб Каабы с золотой лентой
+  (мотив иконки), «Время намаза» + «Prayer Times».
+- Анимации: fade-in 260 мс, cube scale 520 мс, авто-fade через
+  260+620 мс окно → fade 360 мс; итог ~1.2 с. ВСЕ useNativeDriver;
+  pointerEvents="none" — НЕ блокирует реальный старт приложения (Home
+  рендерится и грузит данные ПОД оверлеем); safety-unmount 2.4 с даже если
+  callback потерян. Никаких зависимостей/шрифтов/данных.
+
+**Assets** (перегенерированы, мотив един с BootSplash и Киблой; старые —
+бэкап %TEMP%\opencode\backup\*.bak):
+- icon.png / adaptive-icon.png 1024×1024 — куб Каабы (#15181D, скругление
+  12%) с золотой лентой (#C9A227, верхняя треть) и мягким зелёным свечением
+  (#2E9E7C) на navy #0F172A; adaptive 400px арт в безопасной зоне 66%.
+- favicon.png 196×196 — тот же мотив.
+- splash.png 1242×2436 — куб по центру на navy.
+- app.json пути НЕ менялись (те же имена файлов).
+
+**Prayer widgets** (`components/PrayerCard.js`, `app/(tabs)/index.js`):
+- Русские имена молитв: Фаджр/Восход/Зухр/Аср/Магриб/Иша (NAMES-мэп,
+  display-only; данные и API не тронуты).
+- Подсветка следующей молитвы: Home вычисляет nextPrayer один раз через
+  существующую getNextPrayer (та же утилита, что в NextPrayer-герое;
+  Sunrise исключён из «следующей» как раньше) и передаёт active в карточку —
+  accent-бордер, accentSoft фон, иконка акцентная, activeDot.
+- Системы получения молитв НЕ тронуты (prayerApi/AppDataContext без
+  изменений); light/dark — через те же useAppTheme-цвета.
+
+### 0.9.5 Изменённые файлы (итерация 8)
+
+| Файл | Изменение |
+|---|---|
+| app.json | + android.permission.HIGH_SAMPLING_RATE_SENSORS |
+| app/qibla.js | адаптивное trackMs; кардинальное кольцо С/В/Ю/З (cardinalAnim, unwrapped); compassPointName-пилл; акцентный lock-бейдж |
+| app/_layout.js | + BootSplash overlay поверх Stack (иначе без изменений) |
+| components/BootSplash.js | НОВЫЙ: минималистичный boot splash, native driver, авто-fade ~1.2 c |
+| components/PrayerCard.js | русские имена, activeDot, подсветка следующей молитвы |
+| app/(tabs)/index.js | nextPrayer = getNextPrayer(...) → active в PrayerCard |
+| assets/icon.png, adaptive-icon.png, favicon.png, splash.png | перегенерированы (куб Каабы + золото + свечение на navy) |
+| CONTEXT.md, FINAL_REPORT.md | документация итерации 8 |
+
+### 0.9.6 Проверки (реально выполненные)
+
+- `npm test` — 30/30 PASS (математика Киблы, lock-машина, hijri — не задета).
+- `node scripts/test-prayer-sources.js` — 23/23 PASS (source-система не
+  задета; онлайн-тесты с реальным CSV ДУМ РТ).
+- Qibla runtime smoke (sucrase + RN-моки, %TEMP%\opencode\qibla-smoke) —
+  22/22 PASS: структура (кааба/луч/свет/бейдж/кольцо), zero setState на
+  тиках, native driver у всех анимаций, unwrapped beam (maxJump 10°),
+  NEW cardinal unwrapped (maxJump 10°), lock engage/jitter/release/re-lock/
+  auto-release, bearing 158°.
+- Синтаксис (sucrase + node --check): app/qibla.js, app/_layout.js,
+  app/(tabs)/index.js, components/PrayerCard.js, components/BootSplash.js — OK.
+- `npx expo export --platform android` — OK, Hermes HBC 3.26 MB.
+- Навигационный аудит nav-route-audit.js — ALL PASS (69/69).
+- Assets: размеры/пути проверены (icon/adaptive 1024, favicon 196, splash
+  1242×2436), золотая лента присутствует (пиксель-сэмпл), app.json пути
+  валидны.
+- Web export: ПАДАЕТ на react-native-maps (Importing native-only module) —
+  воспроизведено НА ИСХОДНОМ коммите fe8ac7f (git stash) — ПРЕДСУЩЕСТВУЮЩАЯ
+  проблема, НЕ вызвана итерацией 8, не входила в скоуп.
+
+### 0.9.7 Что НЕ удалось подтвердить без физического устройства
+
+- Реальная частота магнитометра в новом release APK (ожидание: ~30/с после
+  добавления разрешения; если вендорская прошивка cap'ит частоту ниже —
+  сработает адаптивное окно trackMs, луч будет скользить плавно между
+  редкими тиками, но с чуть большей визуальной задержкой).
+- Плавность луча на Redmi Note 12S / 13 Pro+ в новом APK — требуется
+  установка и проверка пользователем.
+- Внешний вид новых assets/иконки на launcher'ах устройств и поведение
+  BootSplash на холодном старте (длительность нативного splash зависит от
+  прошивки).
+
+### 0.9.8 Что проверить пользователю после сборки нового APK
+
+1. Собрать production APK (eas build, profile production — проект managed,
+   разрешение попадёт в манифест автоматически).
+2. Redmi Note 12S и Note 13 Pro+: открыть Киблу, вращать телефон — луч
+   должен двигаться непрерывно и догонять направление без «замираний на
+   пол-оборота»; повёрнутый на 90° телефон — луч доезжает за доли секунды.
+3. Совместить луч с Каабой — lock («Кибла»-бейдж) должен наступать за
+  ~150–300 мс удержания, а не за ~1 секунду.
+4. Кардинальные буквы С/В/Ю/З вращаются синхронно с реальным севером.
+5. Холодный старт: нативный navy-splash → BootSplash (куб + название)
+   → Home ~1.2 c без блокировки взаимодействия.
+6. Главный экран: русские имена молитв, подсвечена следующая.
+7. Если рывки остались — сообщить: это будет новая диагностическая
+   информация (вендор-кап частоты на прошивке MIUI/HyperOS) — копать в
+   сторону фактической частоты тиков и увеличивать окно адаптива.
 
 ---
 

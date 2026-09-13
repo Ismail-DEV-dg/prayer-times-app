@@ -22,19 +22,25 @@ import { createLockMachine, signedDelta, LOCK_ANIM_MS } from "../utils/qiblaLock
 import { Magnetometer } from "expo-sensors";
 
 // Qibla screen. The DIRECTION MATH (qiblaBearing, magnetometerToHeading,
-// declination) is unchanged. This screen only renders it differently:
-// a minimal circle, a soft light beam rotating around the center, and a
-// small Kaaba icon on the ring. The user rotates the phone until the
-// beam points at the Kaaba icon — that moment the phone points at the
-// Qibla (same alignment condition as before: heading ≈ bearing).
+// declination) is unchanged. The qibla bearing is DIFFERENT for every
+// location on Earth (London ≈ 119°, Derbent ≈ 202°, Medina ≈ 176°) —
+// it is computed from the user's GPS position and is NEVER a hardcoded
+// angle.
 //
-// PERFORMANCE MODEL (the previous compass felt like ~30 FPS because it
-// re-rendered React 10x/second and rotated the whole dial via style
-// props). Now:
+// VISUAL MODEL (iteration 8c — the cardinal letters around the dial and
+// the direction pill next to the degrees are removed by request; the
+// bearing card shows the degree value only, and a magnetometer
+// calibration hint sits below the compass. The direction math, the
+// sensor pipeline and the lock machine are untouched):
+//   - STATIC: the ring and the Kaaba icon. None of them ever rotates —
+//     they stay fixed relative to the screen.
+//   - MOVING: ONLY the light beam. Its on-screen angle is
+//     (qiblaBearing − trueHeading) — the real Qibla direction relative
+//     to the current phone orientation.
+//
+// PERFORMANCE MODEL (unchanged since iteration 6):
 //   - the sensor callback does only cheap math and pushes an Animated
-//     target — ZERO setState, ZERO React re-renders during rotation
-//     (not even for the lock badge: it is driven by a native Animated
-//     opacity);
+//     target — ZERO setState, ZERO React re-renders during rotation;
 //   - the beam rotation runs on the NATIVE driver — the UI thread
 //     interpolates at 60 FPS between the JS-pushed targets;
 //   - the beam angle is accumulated UNWRAPPED (never taken modulo 360),
@@ -45,6 +51,20 @@ import { Magnetometer } from "expo-sensors";
 // Sensor + animation tuning.
 const SENSOR_INTERVAL_MS = 30; // raw magnetometer rate (callback = cheap math only)
 const TRACK_ANIM_MS = 90; // native interpolation window per tick (≈3 ticks → continuous motion)
+// Upper clamp for the ADAPTIVE track window (see trackDuration below).
+const TRACK_ANIM_MAX_MS = 450;
+// Why adaptive: on Android 12+ WITHOUT the HIGH_SAMPLING_RATE_SENSORS
+// manifest permission expo-sensors registers the magnetometer with
+// SENSOR_DELAY_NORMAL (≈5-6 events/second, worse on some vendor ROMs).
+// Each tick then animated a 90 ms window and the beam FROZE for the
+// remaining ~100-300 ms — the beam crawled and stuttered in release
+// APKs while Expo Go (which has the permission) stayed smooth. Two
+// fixes, both preserving the direction math exactly:
+//   1) app.json now declares android.permission.HIGH_SAMPLING_RATE_SENSORS.
+//   2) Defense-in-depth (below): the interpolation window follows the
+//      OBSERVED tick rate — fast sensors keep the original 90 ms, slow
+//      vendor-capped sensors get a longer window so the beam keeps
+//      trailing smoothly between sparse ticks instead of freezing.
 
 // Whether this device exposes a magnetometer (needed for a live
 // compass). Never fakes availability.
@@ -86,6 +106,7 @@ export default function QiblaScreen() {
   const prevScreenAngleRef = useRef(null); // last beam angle on screen, 0..360
   const freeUnwrappedRef = useRef(0); // continuous (unwrapped) beam angle
   const lockRef = useRef(null); // lock state machine (utils/qiblaLock.js)
+  const lastTickAtRef = useRef(0); // last sensor event timestamp (adaptive window)
 
   const hasPosition = Boolean(currentLocation);
 
@@ -153,6 +174,21 @@ export default function QiblaScreen() {
     const bearingNow = bearingRef.current;
     if (bearingNow == null) return;
 
+    // --- adaptive track window (release-only stutter fix, see top) ---
+    // Fast sensors (~33 ms ticks) keep the original 90 ms window; slow
+    // vendor-capped sensors (100-500 ms ticks) get ~1.3× the observed
+    // tick gap so the beam glides between sparse events instead of
+    // freezing. Pure timing change — targets and math are identical.
+    const now = Date.now();
+    let trackMs = TRACK_ANIM_MS;
+    if (lastTickAtRef.current) {
+      const gap = now - lastTickAtRef.current;
+      if (gap > SENSOR_INTERVAL_MS * 2) {
+        trackMs = Math.min(Math.round(gap * 1.3), TRACK_ANIM_MAX_MS);
+      }
+    }
+    lastTickAtRef.current = now;
+
     // --- direction math (UNCHANGED formulas) ---
     const magnetic = magnetometerToHeading(data);
     const trueHeading =
@@ -168,7 +204,7 @@ export default function QiblaScreen() {
     prevScreenAngleRef.current = screenAngle;
     if (prev == null) {
       freeUnwrappedRef.current = screenAngle;
-      pushBeamTarget(screenAngle, TRACK_ANIM_MS, Easing.linear);
+      pushBeamTarget(screenAngle, trackMs, Easing.linear);
       if (!lockRef.current) lockRef.current = createLockMachine();
       return;
     }
@@ -188,7 +224,7 @@ export default function QiblaScreen() {
     }
 
     // Free tracking: one native-driven timing per sensor tick.
-    pushBeamTarget(freeUnwrappedRef.current, TRACK_ANIM_MS, Easing.linear);
+    pushBeamTarget(freeUnwrappedRef.current, trackMs, Easing.linear);
   };
 
   // Sensor subscription: ONE listener for this screen, removed on
@@ -294,8 +330,9 @@ export default function QiblaScreen() {
             style={[styles.lockBadge, { opacity: lockGlow, transform: [{ translateY: badgeLift }] }]}
             pointerEvents="none"
           >
-            <View style={[styles.lockPill, { backgroundColor: colors.accentSoft }]}>
-              <Text style={[styles.lockText, { color: colors.accent }]}>Кибла</Text>
+            <View style={[styles.lockPill, { backgroundColor: colors.accent }]}>
+              <Ionicons name="checkmark-circle" size={15} color={colors.textOnActive} />
+              <Text style={[styles.lockText, { color: colors.textOnActive }]}>Кибла</Text>
             </View>
           </Animated.View>
         </View>
@@ -304,6 +341,18 @@ export default function QiblaScreen() {
           Вращайте телефон, чтобы совместить световой луч с Каабой — в этот момент
           телефон направлен на Киблу
         </Text>
+
+        {/* Magnetometer calibration hint (below the compass). */}
+        <View style={[styles.calibrationCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.calibrationTitle, { color: colors.text }]}>
+            Калибровка
+          </Text>
+          <Text style={[styles.calibrationText, { color: colors.textSecondary }]}>
+            Если луч ведёт себя нестабильно или дрожит, откалибруйте магнитометр:
+            несколько раз медленно проведите телефоном в воздухе в виде восьмёрки ∞,
+            наклоняя его в разные стороны. После этого показания компаса станут точнее.
+          </Text>
+        </View>
       </View>
     );
   };
@@ -383,23 +432,38 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "800" },
   card: { borderRadius: 16, padding: 20, alignItems: "center", gap: 6, alignSelf: "stretch" },
   bearingLabel: { fontSize: 13 },
-  bearingValue: { fontSize: 44, fontWeight: "800" },
+  bearingValue: { fontSize: 44, fontWeight: "800", fontVariant: ["tabular-nums"] },
   bearingSub: { fontSize: 12, textAlign: "center" },
   sensorTitle: { fontSize: 16, fontWeight: "700", textAlign: "center" },
   sensorText: { fontSize: 14, lineHeight: 20, textAlign: "center" },
   retryButton: { marginTop: 10, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
-  compassWrap: { alignItems: "center", marginTop: 28 },
-  compass: { width: DIAL_SIZE, height: DIAL_SIZE },
+  compassWrap: { alignItems: "center", marginTop: 36, alignSelf: "stretch" },
+  compass: { width: DIAL_SIZE + 64, height: DIAL_SIZE + 64, alignItems: "center", justifyContent: "center" },
+  calibrationCard: {
+    marginTop: 20,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 6,
+  },
+  calibrationTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
+  calibrationText: { fontSize: 13, lineHeight: 19, textAlign: "center" },
   ring: {
     position: "absolute",
-    left: 0,
-    top: 0,
-    right: 0,
-    bottom: 0,
+    left: 32,
+    top: 32,
+    width: DIAL_SIZE,
+    height: DIAL_SIZE,
     borderRadius: DIAL_RADIUS,
     borderWidth: 2,
   },
-  beamGroup: { position: "absolute", left: 0, top: 0, width: DIAL_SIZE, height: DIAL_SIZE },
+  // The beam assembly (beamGroup + center light + Kaaba chip) sits at the
+  // SAME 32px inset as the static ring — rotate() pivots around the element
+  // CENTER, so the beamGroup center is the beam's rotation pivot and MUST
+  // coincide with the ring's center, otherwise every beam angle reads skewed
+  // on the static cardinal scale (layout regression of iteration 8, fixed to
+  // match the concentric geometry of commit 63dc672).
+  beamGroup: { position: "absolute", left: 32, top: 32, width: DIAL_SIZE, height: DIAL_SIZE },
   beamHalo: {
     position: "absolute",
     left: DIAL_RADIUS - 4.5,
@@ -455,8 +519,8 @@ const styles = StyleSheet.create({
   },
   light1: {
     position: "absolute",
-    left: DIAL_RADIUS - 44,
-    top: DIAL_RADIUS - 44,
+    left: 32 + DIAL_RADIUS - 44,
+    top: 32 + DIAL_RADIUS - 44,
     width: 88,
     height: 88,
     borderRadius: 44,
@@ -464,8 +528,8 @@ const styles = StyleSheet.create({
   },
   light2: {
     position: "absolute",
-    left: DIAL_RADIUS - 30,
-    top: DIAL_RADIUS - 30,
+    left: 32 + DIAL_RADIUS - 30,
+    top: 32 + DIAL_RADIUS - 30,
     width: 60,
     height: 60,
     borderRadius: 30,
@@ -473,8 +537,8 @@ const styles = StyleSheet.create({
   },
   light3: {
     position: "absolute",
-    left: DIAL_RADIUS - 19,
-    top: DIAL_RADIUS - 19,
+    left: 32 + DIAL_RADIUS - 19,
+    top: 32 + DIAL_RADIUS - 19,
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -482,8 +546,8 @@ const styles = StyleSheet.create({
   },
   lightCore: {
     position: "absolute",
-    left: DIAL_RADIUS - 6,
-    top: DIAL_RADIUS - 6,
+    left: 32 + DIAL_RADIUS - 6,
+    top: 32 + DIAL_RADIUS - 6,
     width: 12,
     height: 12,
     borderRadius: 6,
@@ -491,8 +555,8 @@ const styles = StyleSheet.create({
   },
   kaabaChip: {
     position: "absolute",
-    left: DIAL_RADIUS - 16,
-    top: 12,
+    left: 32 + DIAL_RADIUS - 16,
+    top: 32 + 12,
     width: 32,
     height: 32,
     borderRadius: 10,

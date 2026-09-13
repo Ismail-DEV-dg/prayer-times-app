@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ThemeProvider, useAppTheme } from "../theme/ThemeContext";
 import { AppDataProvider } from "../utils/AppDataContext";
+import BootSplash from "../components/BootSplash";
 
 // Pin the root stack's initial route to the tab group so the app ALWAYS
 // opens on the Home tab, no matter which entry URL/deep link state a
@@ -35,6 +36,8 @@ function AppShell() {
         <Stack.Screen name="surah/[number]" options={{ animationDuration: 320 }} />
         <Stack.Screen name="settings" />
       </Stack>
+      {/* Boot splash manages its own lifecycle (fade + safety unmount) */}
+      <BootSplash />
     </>
   );
 }

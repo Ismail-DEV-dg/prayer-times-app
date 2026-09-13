@@ -12,9 +12,20 @@ const ICONS = {
   Isha: "moon",
 };
 
-// One schedule row. `active` keeps highlighting the current/next prayer
-// (existing behaviour). Subtle entrance: fade + slight rise, staggered
-// by row index so the grid appears as a soft cascade (native driver).
+// Russian display names (existing data, display-only).
+const NAMES = {
+  Fajr: "Фаджр",
+  Sunrise: "Восход",
+  Dhuhr: "Зухр",
+  Asr: "Аср",
+  Maghrib: "Магриб",
+  Isha: "Иша",
+};
+
+// One schedule row. `active` highlights the current/next prayer (the
+// caller decides which — usually the next prayer from getNextPrayer).
+// Subtle entrance: fade + slight rise, staggered by row index so the
+// grid appears as a soft cascade (native driver).
 export default function PrayerCard({ name, time, active, index = 0 }) {
   const { colors } = useAppTheme();
   const entrance = useRef(new Animated.Value(0)).current;
@@ -48,13 +59,25 @@ export default function PrayerCard({ name, time, active, index = 0 }) {
         },
       ]}
     >
-      <Ionicons
-        name={ICONS[name] || "time-outline"}
-        size={22}
-        color={active ? colors.accent : colors.textSecondary}
-      />
-      <Text style={[styles.name, { color: active ? colors.accent : colors.text }]}>{name}</Text>
-      <Text style={[styles.time, { color: active ? colors.accent : colors.text }]}>{time}</Text>
+      <View style={styles.topRow}>
+        <Ionicons
+          name={ICONS[name] || "time-outline"}
+          size={18}
+          color={active ? colors.accent : colors.textSecondary}
+        />
+        {active && <View style={[styles.activeDot, { backgroundColor: colors.accent }]} />}
+      </View>
+      <Text style={[styles.name, { color: active ? colors.accent : colors.text }]}>
+        {NAMES[name] || name}
+      </Text>
+      <Text
+        style={[
+          styles.time,
+          { color: active ? colors.accent : colors.text },
+        ]}
+      >
+        {time}
+      </Text>
     </Animated.View>
   );
 }
@@ -65,11 +88,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     borderRadius: 16,
     borderWidth: 1,
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 8,
     alignItems: "center",
-    gap: 6,
+    gap: 4,
   },
-  name: { fontSize: 14, fontWeight: "600" },
-  time: { fontSize: 16, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  topRow: { flexDirection: "row", alignItems: "center", gap: 6, height: 20 },
+  activeDot: { width: 6, height: 6, borderRadius: 3 },
+  name: { fontSize: 12, fontWeight: "600" },
+  time: { fontSize: 15, fontWeight: "700", fontVariant: ["tabular-nums"] },
 });

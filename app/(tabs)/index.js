@@ -22,7 +22,7 @@ import PrayerCard from "../../components/PrayerCard";
 import SourceBadge from "../../components/SourceBadge";
 import SourceInfoToast from "../../components/SourceInfoToast";
 import CitySwitcher from "../../components/CitySwitcher";
-import { formatDateInTimeZone, todayInTimeZone } from "../../utils/time";
+import { formatDateInTimeZone, todayInTimeZone, getNextPrayer } from "../../utils/time";
 import { gregorianToHijri, formatHijriDate } from "../../utils/hijri";
 
 export default function HomeScreen() {
@@ -128,6 +128,15 @@ export default function HomeScreen() {
 
   const tz = prayerData?.timezone || city?.timezone || null;
 
+  // Which prayer row to highlight: the NEXT prayer (Sunrise is not a
+  // prayer — it is excluded from "next" and rendered neutral). Same
+  // existing utility the NextPrayer hero card uses; display-only.
+  const allPrayers = prayerData?.prayers || [];
+  const nextPrayer = getNextPrayer(
+    allPrayers.filter((p) => p.name !== "Sunrise"),
+    tz
+  );
+
   // Hijri date: prefer the value returned together with the schedule
   // (AlAdhan computes it for the city's calendar day); fall back to
   // the local Kuwaiti algorithm. Displayed next to the Gregorian date,
@@ -208,13 +217,13 @@ export default function HomeScreen() {
         <NextPrayer prayers={(prayerData?.prayers || []).filter((p) => p.name !== "Sunrise")} timezone={tz} />
 
         <View style={styles.grid}>
-          {(prayerData?.prayers || []).map((p, i) => (
+          {allPrayers.map((p, i) => (
             <PrayerCard
               key={p.name}
               name={p.name}
               time={p.time}
               index={i}
-              active={false}
+              active={Boolean(nextPrayer && nextPrayer.name === p.name)}
             />
           ))}
         </View>

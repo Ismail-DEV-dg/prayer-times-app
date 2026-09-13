@@ -303,8 +303,85 @@ test("lock machine: alignment tolerance is ±3° (both sides, incl. across 0/360
     now += 30;
     m.tick(4.5); // beyond the tolerance
   }
-  assert(m.locked === false, "never locks beyond the tolerance");
+   assert(m.locked === false, "never locks beyond the tolerance");
 });
+
+// ================= QIBLA COMPASS LAYOUT (visual angle = math angle) =================
+// Regression test for the iteration-8 layout bug: the ring/cardinals moved
+// to a 32px inset but the rotating beamGroup stayed at (0,0). React Native
+// rotate() pivots around the element CENTER, so the beam's pivot stopped
+// coinciding with the ring's center and every beam angle read skewed on the
+// static cardinal scale (up to ~30° error, angle-dependent — e.g. Derbent
+// 201.62° rendered at 231.58°). The fix restores the concentric geometry of
+// commit 63dc672 inside the 8b static design. This test parses the REAL
+// app/qibla.js styles and asserts concentricity + zero visual-vs-math error.
+
+function qiblaLayoutFromSource() {
+  const src = fs.readFileSync(path.join(ROOT, "app", "qibla.js"), "utf8");
+  const style = (name) => {
+    const m = src.match(new RegExp(name + ": \\{[\\s\\S]*?\\n  \\}"));
+    if (!m) throw new Error("style not found: " + name);
+    return m[0];
+  };
+  const num = (styleSrc, re, what) => {
+    const m = styleSrc.match(re);
+    if (!m) throw new Error("cannot parse " + what);
+    return Number(m[1]);
+  };
+  const DIAL_SIZE = num(src, /const DIAL_SIZE = ([\d.]+)/, "DIAL_SIZE");
+  const DIAL_RADIUS = DIAL_SIZE / 2;
+
+  // ring offset (may be 0 in the reference layout or an explicit inset)
+  const ring = style("ring");
+  const ringLeft = num(ring, /left: ([\d.]+)/, "ring.left");
+  const ringTop = num(ring, /top: ([\d.]+)/, "ring.top");
+
+  // beamGroup offset — may be "left: 32" or "left: 0" (both parseable numbers)
+  const bg = style("beamGroup");
+  const bgLeft = num(bg, /left: ([\d.]+)/, "beamGroup.left");
+  const bgTop = num(bg, /top: ([\d.]+)/, "beamGroup.top");
+
+  // pivot of the beam rotation = beamGroup center (RN rotate() pivot)
+  const pivot = { x: bgLeft + DIAL_SIZE / 2, y: bgTop + DIAL_SIZE / 2 };
+  // center of the static reading scale = ring center
+  const scale = { x: ringLeft + DIAL_RADIUS, y: ringTop + DIAL_RADIUS };
+  return { pivot, scale, DIAL_SIZE, DIAL_RADIUS };
+}
+
+test("Qibla layout: the beam's rotation pivot coincides with the ring center (concentric)", () => {
+  const { pivot, scale } = qiblaLayoutFromSource();
+  assert(pivot.x === scale.x && pivot.y === scale.y,
+    `beam pivot (${pivot.x},${pivot.y}) != ring center (${scale.x},${scale.y}) — beam angles would render skewed`);
+});
+
+test("Qibla layout: rendered beam angle equals the pushed math angle (±0.01°)", () => {
+  const { pivot, scale } = qiblaLayoutFromSource();
+  // Model: at rotate(0deg) the beam segment A center-line tip sits at
+  // local (DIAL_RADIUS, 91) — top:46, height:DIAL_RADIUS-46 — i.e. 90px
+  // above the pivot along the local UP axis. After rotating by theta the
+  // tip is pivot + 90*(sin θ, -cos θ). The angle at which a viewer standing
+  // at the SCALE CENTER sees the beam must equal theta exactly.
+  const R_TIP = 90;
+  const beamTipAt = (thetaDeg) => {
+    const r = (thetaDeg * Math.PI) / 180;
+    return {
+      x: pivot.x + R_TIP * Math.sin(r),
+      y: pivot.y - R_TIP * Math.cos(r),
+    };
+  };
+  const apparentAt = (thetaDeg) => {
+    const tip = beamTipAt(thetaDeg);
+    const a = (Math.atan2(tip.x - scale.x, -(tip.y - scale.y)) * 180) / Math.PI;
+    return (a + 360) % 360;
+  };
+  const delta = (a, b) => ((a - b + 540) % 360) - 180;
+  // several representative bearings incl. all quadrants and the seam
+  for (const theta of [0, 58.48, 90, 118.99, 176.36, 201.62, 277.57, 359]) {
+    const err = Math.abs(delta(apparentAt(theta), theta));
+    assert(err <= 0.01, `visual angle deviates from math at θ=${theta}°: err=${err.toFixed(2)}°`);
+  }
+});
+
 
 // ================= HIJRI DATE =================
 
