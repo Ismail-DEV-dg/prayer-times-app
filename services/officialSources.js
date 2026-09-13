@@ -176,6 +176,148 @@ function nearestDagestanAnchor(latitude, longitude, maxKm = 55) {
   return bestKm <= maxKm ? best : null;
 }
 
+// ==================== territorial helpers: Tatarstan ====================
+// The DUM of the Republic of Tatarstan (dumrt.ru) publishes one official
+// CSV per district/city: /netcat_files/482/640/{Slug}.csv — semicolon-
+// separated, 730 rows (two calendar years), columns (per the site's own
+// rendering JS):
+//   [0] date dd.mm.yyyy
+//   [1] Таң / suhur end (dawn marker for fasting)
+//   [2] Fajr  (Иртәнге намаз — mosque time)
+//   [3] Sunrise (Кояш чыга)
+//   [4] Зәвәл / solar noon (zawal)
+//   [5] Dhuhr (Өйлә намазы — mosque time, fixed 12:00 on the site)
+//   [6] Asr   (Икенде намазы)
+//   [7] Maghrib (Ахшам намазы)
+//   [8] Isha (Ястү намазы)
+// These helpers form the APPLICABILITY RULE of that single source.
+
+// Russian settlement/district name -> CSV slug (transliterated file name).
+const TATARSTAN_SLUGS = {
+  "азнакаево": "Aznakay",
+  "аксубаево": "Aksubay",
+  "актаныш": "Aktanis",
+  "елабуга": "Elabuga",
+  "алексеевское": "Aleksey",
+  "апастово": "Apastovo",
+  "арск": "Arsk",
+  "базарные матаки": "BazarnyeMataki",
+  "богатые сабы": "BogatyeSaby",
+  "балтаси": "Baltasi",
+  "балтач": "Baltasi",
+  "рыбная слобода": "RibnayaSlpboda",
+  "бавлы": "Bavli",
+  "высокая гора": "VicokayGora",
+  "болгар": "Bolgary",
+  "буинск": "Buinsk",
+  "бугульма": "Bugulma",
+  "заинск": "Zainsk",
+  "старое дрожжаное": "StaroeChuprale",
+  "казань": "Kazan",
+  "камское устье": "KamskoeUstye",
+  "кукмор": "Kukmor",
+  "лаишево": "Laish",
+  "лениногорск": "Leninogorsk",
+  "мамадыш": "Mamadis",
+  "менделеевск": "Mendeleevsk",
+  "мензелинск": "Menzilinsk",
+  "муслюмово": "Muslimov",
+  "нурлат": "Nurlat",
+  "большие кайбицы": "BolshieKaybesy",
+  "большая атня": "BolshAtna",
+  "пестрецы": "Pestrezy",
+  "сарманово": "Sarmanovo2",
+  "тюлячи": "Tulyachi",
+  "нижнекамск": "Nignekamsk",
+  "тетюши": "Tet2",
+  "уруссу": "Urussu",
+  "черемшан": "Cheremsan",
+  "чистополь": "Chistop",
+  "верхний услон": "VerhUslon",
+  "набережные челны": "NabChelny",
+  "зеленодольск": "Zelenodolsk",
+  "новошешминск": "Novosesminsk",
+  "агрыз": "Agriz",
+  "альметьевск": "Almet",
+};
+
+// District anchors (district centers of the republic) — the coverage
+// geometry of the DUM RT per-district CSV files. A settlement without
+// its own slug maps to the nearest anchor within 100 km (covers the
+// whole republic; the region gate "Татарстан" keeps neighbors out).
+const TATARSTAN_ANCHORS = [
+  { slug: "Aznakay", name: "Азнакаево", lat: 54.85821, lon: 53.08006 },
+  { slug: "Aksubay", name: "Аксубаево", lat: 54.84716, lon: 50.79631 },
+  { slug: "Aktanis", name: "Актаныш", lat: 55.71714, lon: 54.07116 },
+  { slug: "Elabuga", name: "Елабуга", lat: 55.76232, lon: 52.04425 },
+  { slug: "Aleksey", name: "Алексеевское", lat: 55.30708, lon: 50.11888 },
+  { slug: "Apastovo", name: "Апастово", lat: 55.20123, lon: 48.51127 },
+  { slug: "Arsk", name: "Арск", lat: 56.09254, lon: 49.87819 },
+  { slug: "BazarnyeMataki", name: "Базарные Матаки", lat: 54.90693, lon: 49.9342 },
+  { slug: "BogatyeSaby", name: "Богатые Сабы", lat: 56.00942, lon: 50.44714 },
+  { slug: "Baltasi", name: "Балтаси", lat: 56.34646, lon: 50.20749 },
+  { slug: "RibnayaSlpboda", name: "Рыбная Слобода", lat: 55.46247, lon: 50.14443 },
+  { slug: "Bavli", name: "Бавлы", lat: 54.39759, lon: 53.25116 },
+  { slug: "VicokayGora", name: "Высокая Гора", lat: 55.90988, lon: 49.31343 },
+  { slug: "Bolgary", name: "Болгар", lat: 54.97417, lon: 49.03083 },
+  { slug: "Buinsk", name: "Буинск", lat: 54.97422, lon: 48.29088 },
+  { slug: "Bugulma", name: "Бугульма", lat: 54.5378, lon: 52.7985 },
+  { slug: "Zainsk", name: "Заинск", lat: 55.28359, lon: 51.99865 },
+  { slug: "StaroeChuprale", name: "Старое Дрожжаное", lat: 54.72384, lon: 47.55652 },
+  { slug: "Kazan", name: "Казань", lat: 55.78874, lon: 49.12214 },
+  { slug: "KamskoeUstye", name: "Камское Устье", lat: 55.19557, lon: 49.26208 },
+  { slug: "Kukmor", name: "Кукмор", lat: 56.18648, lon: 50.89404 },
+  { slug: "Laish", name: "Лаишево", lat: 55.40559, lon: 49.5521 },
+  { slug: "Leninogorsk", name: "Лениногорск", lat: 54.5971, lon: 52.45124 },
+  { slug: "Mamadis", name: "Мамадыш", lat: 55.70273, lon: 51.40439 },
+  { slug: "Mendeleevsk", name: "Менделеевск", lat: 55.89692, lon: 52.31119 },
+  { slug: "Menzilinsk", name: "Мензелинск", lat: 55.72792, lon: 53.1022 },
+  { slug: "Muslimov", name: "Муслюмово", lat: 55.30706, lon: 53.18855 },
+  { slug: "Nurlat", name: "Нурлат", lat: 54.42903, lon: 50.80598 },
+  { slug: "BolshieKaybesy", name: "Большие Кайбицы", lat: 55.40331, lon: 48.18552 },
+  { slug: "BolshAtna", name: "Большая Атня", lat: 56.25059, lon: 49.45161 },
+  { slug: "Pestrezy", name: "Пестрецы", lat: 55.75408, lon: 49.6511 },
+  { slug: "Sarmanovo2", name: "Сарманово", lat: 55.25439, lon: 52.58784 },
+  { slug: "Tulyachi", name: "Тюлячи", lat: 55.88889, lon: 50.23416 },
+  { slug: "Nignekamsk", name: "Нижнекамск", lat: 55.63794, lon: 51.81502 },
+  { slug: "Tet2", name: "Тетюши", lat: 54.93768, lon: 48.83267 },
+  { slug: "Urussu", name: "Уруссу", lat: 54.59701, lon: 53.45625 },
+  { slug: "Cheremsan", name: "Черемшан", lat: 54.66128, lon: 51.51143 },
+  { slug: "Chistop", name: "Чистополь", lat: 55.36612, lon: 50.64399 },
+  { slug: "VerhUslon", name: "Верхний Услон", lat: 55.768, lon: 48.9776 },
+  { slug: "NabChelny", name: "Набережные Челны", lat: 55.73718, lon: 52.41961 },
+  { slug: "Zelenodolsk", name: "Зеленодольск", lat: 55.84376, lon: 48.51784 },
+  { slug: "Novosesminsk", name: "Новошешминск", lat: 55.06637, lon: 51.24061 },
+  { slug: "Agriz", name: "Агрыз", lat: 56.5234, lon: 52.99431 },
+  { slug: "Almet", name: "Альметьевск", lat: 54.90395, lon: 52.31793 },
+];
+
+function isTatarstanRegionName(canonRegion) {
+  if (!canonRegion) return false;
+  return /(^|\s)(татарстан|tatarstan)($|\s)/.test(canonRegion);
+}
+
+function resolveTatarstanSlug({ name, region }) {
+  const cityName = canon(name);
+  if (cityName && TATARSTAN_SLUGS[cityName]) return TATARSTAN_SLUGS[cityName];
+  const regionName = canon(region);
+  if (regionName && TATARSTAN_SLUGS[regionName]) return TATARSTAN_SLUGS[regionName];
+  return null;
+}
+
+function nearestTatarstanAnchor(latitude, longitude, maxKm = 100) {
+  let best = null;
+  let bestKm = Infinity;
+  for (const a of TATARSTAN_ANCHORS) {
+    const km = haversineKm(latitude, longitude, a.lat, a.lon);
+    if (km < bestKm) {
+      bestKm = km;
+      best = a;
+    }
+  }
+  return bestKm <= maxKm ? best : null;
+}
+
 // ============================ REGISTRY ============================
 // Entry model (recommended fields; not all are mandatory):
 //   id           unique string
@@ -227,6 +369,41 @@ export const OFFICIAL_PRAYER_SOURCES = [
       "settlement maps to its district file (name/district match, then " +
       "nearest district anchor ≤55 km). NOT a source for the rest of Russia.",
   },
+  {
+    // DUM of the Republic of Tatarstan — official regional muftiate.
+    // Machine-readable: https://dumrt.ru/netcat_files/482/640/{Slug}.csv
+    // VERIFIED 2026-09-13: all 44 slugs HTTP 200 (text/csv), 730 rows
+    // each (full 2025 + 2026 years; today's row present), semicolon-
+    // separated; columns per the site's own rendering JS (see the
+    // Tatarstan helpers block above). Dhuhr is published as the fixed
+    // mosque time 12:00 — that IS the official published schedule.
+    id: "dum_rt",
+    sourceName: "ДУМ Республики Татарстан",
+    sourceLevel: "region",
+    sourceType: "official_region",
+    sourceUrl: "https://dumrt.ru/ru/help-info/prayertime/",
+    fetchType: "dumrt_csv",
+    priority: 100,
+    endpoint: "https://dumrt.ru/netcat_files/482/640/",
+    country: /(^|\s)(россия|russia)($|\s)/,
+    region: /(^|\s)(татарстан|tatarstan)($|\s)/,
+    matchesCountry: (c) => c.includes("россия") || c.includes("russia"),
+    // "Татарстан" / "Республика Татарстан" / "Tatarstan" — geocoders and
+    // the device reverse geocoder return these forms in admin1/region.
+    matchRegion: isTatarstanRegionName,
+    resolveCity: ({ name, region, latitude, longitude }) => {
+      const slug =
+        resolveTatarstanSlug({ name, region }) ||
+        (latitude != null && longitude != null
+          ? (nearestTatarstanAnchor(latitude, longitude) || {}).slug
+          : null);
+      return slug ? { slug } : null;
+    },
+    notes:
+      "Territory: Republic of Tatarstan ONLY. Per-district CSV files; a " +
+      "settlement maps to its district file (name/district match, then " +
+      "nearest district anchor ≤100 km). NOT a source for the rest of Russia.",
+  },
   // ------------------------------------------------------------------
   // Sources INTENTIONALLY NOT registered (checked 2026-09-12/13):
   // - Umm al-Qura (Saudi Arabia): no public machine-readable API;
@@ -235,10 +412,27 @@ export const OFFICIAL_PRAYER_SOURCES = [
   // - DUM of Russia (dumrf.ru): official calculation METHOD (AlAdhan
   //   id 14) but NO schedule API -> stays the country-level calculation
   //   fallback, not a registry entry.
-  // - Chechnya (grozny-inform.ru/namaz): HTTP 410 Gone; no machine-
-  //   readable API found -> NOT registered. Grozny uses calculation.
-  // - Stavropol Krai: no confirmed official machine-readable source
-  //   found -> NOT registered.
+  // - Chechnya (dumchr.ru): official site reachable BUT (a) the times
+  //   shown ("Времена Намазов в Грозном") are computed client-side by
+  //   the PrayTimes.org calculator plugin (tm-islamic-helper), not a
+  //   published schedule; (b) Grozny-only widget; (c) TLS certificate
+  //   EXPIRED 2026-03-21 (secure fetch would fail on device).
+  //   grozny-inform.ru/namaz -> HTTP 410. -> NOT registered; Chechnya
+  //   cities use calculation method 14.
+  // - Stavropol Krai (dumsk.com): official site behind a JS cookie wall
+  //   (beget); times rendered by the salat-times WordPress calculator
+  //   plugin; no per-city machine-readable schedule -> NOT registered.
+  // - ЦДУМ России (cdum.ru): VERIFIED official year-table pages (2026
+  //   data) for ~21 cities, but per-city HTML pages = a city list, and
+  //   HTML scraping fragility; cities outside the list cannot honestly
+  //   claim coverage -> NOT registered (documented in FINAL_REPORT).
+  // - Diyanet (Türkiye, namazvakitleri.diyanet.gov.tr): per-district
+  //   HTML pages; requires a hardcoded districtId->URL map of 1000+
+  //   districts (a de-facto city list) -> NOT registered; Türkiye uses
+  //   calculation method 13 (Diyanet via AlAdhan).
+  // - MUIS Singapore / JAKIM Malaysia e-solat / UAE Awqaf: official
+  //   sites exist but no confirmed machine-readable API reachable from
+  //   this network (e-solat.gov.my DNS fails) -> NOT registered.
   // - namaz.today: HTML pages, no per-city JSON API -> NOT registered.
 ];
 

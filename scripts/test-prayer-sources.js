@@ -105,6 +105,11 @@ const KHUNZAKH_VILLAGE = { name: "Тлярата", region: "Дагестан", c
 const MOSCOW = { name: "Москва", region: "Москва", country: "Россия / Russia", latitude: 55.7558, longitude: 37.6173, timezone: "Europe/Moscow" };
 const MEDINA = { name: "Medina", region: "Al Madinah", country: "Saudi Arabia", latitude: 24.4686, longitude: 39.6142, timezone: "Asia/Riyadh" };
 const HELSINKI = { name: "Helsinki", region: "Uusimaa", country: "Finland", latitude: 60.1699, longitude: 24.9384, timezone: "Europe/Helsinki" };
+// Tatarstan fixtures (DUM RT CSV source)
+const KAZAN = { name: "Казань", region: "Татарстан", country: "Россия", latitude: 55.78874, longitude: 49.12214, timezone: "Europe/Moscow" };
+const NABEREZHNYE_CHELY = { name: "Набережные Челны", region: "Республика Татарстан", country: "Россия", latitude: 55.73718, longitude: 52.41961, timezone: "Europe/Moscow" };
+const GROZNY = { name: "Грозный", region: "Чечня", country: "Россия", latitude: 43.31195, longitude: 45.68895, timezone: "Europe/Moscow" };
+const STAVROPOL = { name: "Ставрополь", region: "Ставрополье", country: "Россия", latitude: 45.03442, longitude: 41.9642, timezone: "Europe/Moscow" };
 
 const tests = [];
 
@@ -422,7 +427,9 @@ tests.push(
 tests.push(
   test("T15 world coverage: Grozny/USA/other countries without confirmed sources -> calculation", () => {
     // Grozny/Chechnya: no VERIFIED machine-readable source found
-    // (grozny-inform.ru/namaz -> HTTP 410) -> resolver must return null.
+    // (dumchr.ru times are a client-side calculator widget + expired
+    // TLS; grozny-inform.ru/namaz -> HTTP 410) -> resolver must return
+    // null -> AUTO falls to the country-default calculation method.
     const grozny = official.resolvePrayerSource({
       name: "Грозный", region: "Чечня", country: "Россия",
       latitude: 43.3169, longitude: 45.6981, timezone: "Europe/Moscow",
@@ -440,6 +447,154 @@ tests.push(
       latitude: 41.0082, longitude: 28.9784, timezone: "Europe/Istanbul",
     });
     assert(istanbul === null, "Istanbul must not match (no confirmed TR source)");
+  })
+);
+
+// ---------- Tatarstan (DUM RT CSV source, iteration 7) ----------
+
+tests.push(
+  test("T18 Kazan/Tatarstan AUTO resolves to ДУМ Республики Татарстан (region level)", () => {
+    const m = official.resolvePrayerSource(KAZAN);
+    assert(m, "no match");
+    assert(m.specificity === "region", `specificity: ${m.specificity}`);
+    assert(m.source.sourceLevel === "region", `sourceLevel: ${m.source.sourceLevel}`);
+    assert(m.source.sourceName === "ДУМ Республики Татарстан", m.source.sourceName);
+    assert(m.resolved.slug === "Kazan", `slug: ${m.resolved.slug}`);
+    // alt region form "Республика Татарстан" (device reverse geocoder)
+    const m2 = official.resolvePrayerSource(NABEREZHNYE_CHELY);
+    assert(m2 && m2.resolved.slug === "NabChelny", `NabChelny slug: ${m2 && m2.resolved.slug}`);
+    assert(m2.source.sourceName === "ДУМ Республики Татарстан", m2.source.sourceName);
+  })
+);
+
+tests.push(
+  test("T19 Tatarstan village without own slug -> nearest district anchor; neighbors rejected", () => {
+    // A settlement inside Tatarstan without its own slug maps to the
+    // nearest district anchor file (official district schedule).
+    const m = official.resolvePrayerSource({
+      name: "Карабудахкент-подобное-село", region: "Татарстан", country: "Россия",
+      latitude: 55.9, longitude: 49.5, timezone: "Europe/Moscow",
+    });
+    assert(m, "village inside Tatarstan must match via anchor");
+    assert(m.source.sourceName === "ДУМ Республики Татарстан", m.source.sourceName);
+    assert(typeof m.resolved.slug === "string" && m.resolved.slug.length > 0, "no slug");
+    // Outside the region gate the source must NOT apply even when
+    // coordinates are close to an anchor (Cheboksary ~85 km from
+    // Zelenodolsk but in Chuvashia):
+    const cheboksary = official.resolvePrayerSource({
+      name: "Чебоксары", region: "Чувашия", country: "Россия",
+      latitude: 56.1322, longitude: 47.2519, timezone: "Europe/Moscow",
+    });
+    assert(cheboksary === null, "Cheboksary (outside Tatarstan) must not match");
+    // Ulyanovsk region city near the border:
+    const ulyanovsk = official.resolvePrayerSource({
+      name: "Ульяновск", region: "Ульяновская Область", country: "Россия",
+      latitude: 54.3282, longitude: 48.3866, timezone: "Europe/Moscow",
+    });
+    assert(ulyanovsk === null, "Ulyanovsk (outside Tatarstan) must not match");
+  })
+);
+
+tests.push(
+  test("ONLINE T20 Kazan AUTO -> DUM RT schedule (6 rows, source=ДУМ РТ, Dhuhr=12:00 official mosque time)", async () => {
+    const data = await prayer.fetchPrayerTimes({
+      latitude: KAZAN.latitude,
+      longitude: KAZAN.longitude,
+      method: null,
+      timezone: KAZAN.timezone,
+      country: KAZAN.country,
+      name: KAZAN.name,
+      region: KAZAN.region,
+    });
+    assert(data.prayers.length === 6, `prayers: ${data.prayers.length}`);
+    const names = data.prayers.map((p) => p.name).join(",");
+    assert(names === "Fajr,Sunrise,Dhuhr,Asr,Maghrib,Isha", names);
+    for (const p of data.prayers) assert(/^\d{1,2}:\d{2}$/.test(p.time), `bad time ${p.time}`);
+    assert(data.source.type === "official_region", data.source.type);
+    assert(data.source.name === "ДУМ Республики Татарстан", data.source.name);
+    assert(data.timezone === "Europe/Moscow", data.timezone);
+    // Dhuhr is the published fixed mosque time
+    const dhuhr = data.prayers.find((p) => p.name === "Dhuhr");
+    assert(dhuhr.time === "12:00", `Dhuhr must be the official mosque time 12:00, got ${dhuhr.time}`);
+    // Sanity vs astronomy: Fajr < Sunrise < Dhuhr < Asr < Maghrib < Isha (minutes)
+    const mins = data.prayers.map((p) => {
+      const [h, mm] = p.time.split(":").map(Number);
+      return h * 60 + mm;
+    });
+    for (let i = 1; i < mins.length; i++) {
+      assert(mins[i] > mins[i - 1], `prayer order broken at ${data.prayers[i].name}`);
+    }
+  })
+);
+
+tests.push(
+  test("ONLINE T21 another Tatarstan city (Naberezhnye Chelny) AUTO -> same regional source; Moscow unaffected", async () => {
+    const data = await prayer.fetchPrayerTimes({
+      latitude: NABEREZHNYE_CHELY.latitude,
+      longitude: NABEREZHNYE_CHELY.longitude,
+      method: null,
+      timezone: NABEREZHNYE_CHELY.timezone,
+      country: NABEREZHNYE_CHELY.country,
+      name: NABEREZHNYE_CHELY.name,
+      region: NABEREZHNYE_CHELY.region,
+    });
+    assert(data.source.name === "ДУМ Республики Татарстан", data.source.name);
+    assert(data.prayers.length === 6, "6 rows");
+    // Region gate: Moscow still resolves to calculation (no regression)
+    const msk = await prayer.fetchPrayerTimes({
+      latitude: MOSCOW.latitude,
+      longitude: MOSCOW.longitude,
+      method: null,
+      timezone: MOSCOW.timezone,
+      country: MOSCOW.country,
+      name: MOSCOW.name,
+      region: MOSCOW.region,
+    });
+    assert(msk.source.type === "calculated", msk.source.type);
+    assert(msk.source.name === "Расчётное расписание (ДУМ России)", msk.source.name);
+  })
+);
+
+tests.push(
+  test("ONLINE T22 broken DUM RT source -> honest fallback to calculation (chain works for the new entry)", async () => {
+    const reg = official.OFFICIAL_PRAYER_SOURCES;
+    const dumrt = reg.find((s) => s.id === "dum_rt");
+    assert(dumrt, "dum_rt entry must exist in the registry");
+    const realFetchType = dumrt.fetchType;
+    const realEndpoint = dumrt.endpoint;
+    try {
+      dumrt.fetchType = "broken_nonexistent"; // dispatch fails -> chain continues
+      dumrt.endpoint = "https://dumrt.ru/nonexistent-path-404/";
+      const data = await prayer.fetchPrayerTimes({
+        latitude: KAZAN.latitude,
+        longitude: KAZAN.longitude,
+        method: null,
+        timezone: KAZAN.timezone,
+        country: KAZAN.country,
+        name: KAZAN.name,
+        region: KAZAN.region,
+      });
+      assert(data.prayers.length === 6, "fallback must return a full schedule");
+      assert(data.source.type === "calculated", data.source.type);
+      assert(data.source.name === "Расчётное расписание (ДУМ России)", data.source.name);
+    } finally {
+      dumrt.fetchType = realFetchType;
+      dumrt.endpoint = realEndpoint;
+    }
+  })
+);
+
+tests.push(
+  test("T23 REGRESSION: Derbent AUTO still resolves to the Dagestan Muftiate (unchanged)", () => {
+    // The single most important invariant of this iteration: adding a
+    // new regional source must not change the existing Derbent path.
+    const m = official.resolvePrayerSource(DERBENT);
+    assert(m, "no match");
+    assert(m.source.sourceName === "Муфтият Республики Дагестан", m.source.sourceName);
+    assert(m.resolved.slug === "derbent", `slug: ${m.resolved.slug}`);
+    // Kazan must NOT accidentally match the Dagestan source and vice versa
+    const kazan = official.resolvePrayerSource(KAZAN);
+    assert(kazan.source.id === "dum_rt", `kazan source: ${kazan.source.id}`);
   })
 );
 

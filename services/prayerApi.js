@@ -56,18 +56,26 @@ export const RUSSIA_METHOD = 14; // ДУМ России
 // docs stay valid; entries are source+applicability rules, NOT a
 // manual world-city list.
 //
-// VERIFICATION STATUS (updated 2026-09-12):
+// VERIFICATION STATUS (updated 2026-09-13):
 // - Muftiyat of Dagestan (muftiyatrd.ru): CONFIRMED machine-readable
 //   JSON per district (https://muftiyatrd.ru/json/namaz/{slug}.json,
 //   27 slugs, 365 days, namaz_1..5 + voshod). Registered as
 //   official_region for Russia/Dagestan. Takes priority over the
 //   ДУМ России method inside Dagestan ONLY.
+// - DUM of the Republic of Tatarstan (dumrt.ru): CONFIRMED machine-
+//   readable CSV per district (https://dumrt.ru/netcat_files/482/640/
+//   {Slug}.csv, 44 slugs, 730 rows = 2025+2026, semicolon-separated).
+//   Registered as official_region for Russia/Tatarstan. Takes priority
+//   over the ДУМ России method inside Tatarstan ONLY.
 // - Umm al-Qura (Saudi Arabia): NO public machine-readable API found;
 //   time.uqu.edu.sa unresolvable from the app network -> NOT registered;
 //   Saudi cities use the AlAdhan Umm al-Qura method (id 4).
 // - ДУМ России: an official calculation METHOD (AlAdhan id 14), not a
 //   per-city schedule API -> remains the country-level calculation
 //   fallback for Russian cities without a more specific source.
+// - Chechnya (dumchr.ru): times are a client-side PrayTimes.org
+//   calculator widget (not a published schedule) and the site's TLS
+//   certificate is expired (2026-03-21) -> NOT registered.
 // - namaz.today: HTML schedules, no per-city JSON API -> NOT registered.
 export const OFFICIAL_SOURCE_REGISTRY = OFFICIAL_PRAYER_SOURCES;
 
@@ -240,6 +248,71 @@ async function fetchFromOfficial(entry, { latitude, longitude, timezone }) {
       },
     };
   }
+
+  // DUM of the Republic of Tatarstan: per-district CSV on dumrt.ru.
+  // Format verified 2026-09-13: semicolon-separated; each data row is
+  //   date;Таң;Fajr;Sunrise;Зәвәл;Dhuhr;Asr;Maghrib;Isha[;Qibla]
+  // (2025 rows carry a trailing Qibla column; 2026 rows do not — the
+  // date column decides which year a row belongs to). Dhuhr is the
+  // official fixed mosque time (12:00); Зәвәл (solar noon) is published
+  // for reference and is NOT used as the Dhuhr row.
+  if (source.fetchType === "dumrt_csv") {
+    if (!resolved || !resolved.slug) return null;
+    const { todayInTimeZone } = require("../utils/time");
+    const today = todayInTimeZone(timezone || undefined); // yyyy-mm-dd
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return null;
+    const [y, m, d] = today.split("-").map(Number);
+    const wanted = `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`;
+
+    const url = `${source.endpoint}${resolved.slug}.csv`;
+    const response = await fetchWithTimeout(url, 15000);
+    if (!response.ok) throw new Error("API_ERROR");
+    const text = await response.text();
+    if (!text || text.length < 200) throw new Error("API_ERROR");
+
+    const dateRe = /^\d{2}\.\d{2}\.\d{4}$/;
+    let row = null;
+    let dataRows = 0;
+    for (const rawLine of text.split(/\r?\n/)) {
+      const parts = rawLine.split(";");
+      if (parts.length < 9) continue;
+      const dateCell = parts[0].trim();
+      if (!dateRe.test(dateCell)) continue;
+      dataRows++;
+      if (dateCell === wanted) row = parts;
+    }
+    // The file must be a real year schedule (hundreds of rows), not a
+    // stub/404-HTML rescue: two published years, ≥300 data rows.
+    if (dataRows < 300 || !row) throw new Error("API_ERROR");
+
+    const timeOf = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "").trim()) ? String(v).trim() : null);
+    const prayers = [
+      { name: "Fajr", key: 2 },
+      { name: "Sunrise", key: 3 },
+      { name: "Dhuhr", key: 5 },
+      { name: "Asr", key: 6 },
+      { name: "Maghrib", key: 7 },
+      { name: "Isha", key: 8 },
+    ]
+      .map(({ name, key }) => ({ name, time: timeOf(row[key]) }))
+      .filter((p) => p.time !== null);
+    if (prayers.length !== 6) throw new Error("API_ERROR"); // no fabricated times
+
+    return {
+      prayers,
+      hijriDate: null,
+      hijriDateRu: hijriLocal(timezone),
+      gregorianDate: null,
+      timezone: timezone || null,
+      source: {
+        type: source.sourceType,
+        name: source.sourceName,
+        url: source.sourceUrl,
+        lastUpdated: new Date().toISOString(),
+      },
+    };
+  }
+
   return null; // unknown fetchType -> caller continues down the chain
 }
 
