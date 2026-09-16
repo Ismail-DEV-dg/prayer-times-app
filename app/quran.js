@@ -109,6 +109,26 @@ export default function QuranScreen() {
         />
       </View>
 
+      {/* Two ways to open the Quran: READ (this screen's list below) and
+          LISTEN (full reciter choice + audio player, saved position). */}
+      <View style={styles.modeRow}>
+        <TouchableOpacity
+          style={[styles.modeCard, { backgroundColor: colors.card, borderColor: colors.accent }]}
+          onPress={() => router.push("/listen")}
+        >
+          <Ionicons name="headset" size={20} color={colors.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.modeTitle, { color: colors.text }]}>Слушать</Text>
+            <Text style={[styles.modeSub, { color: colors.textSecondary }]}>
+              60 чтецов · суры целиком
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.listCaption, { color: colors.textSecondary }]}>Читать</Text>
+
       {loading && !surahs ? (
         <View style={[styles.center, { flex: 1 }]}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -162,6 +182,25 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   searchInput: { flex: 1, fontSize: 15, paddingVertical: 4 },
+  modeRow: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },
+  modeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+  },
+  modeTitle: { fontSize: 15, fontWeight: "800" },
+  modeSub: { fontSize: 12, marginTop: 2 },
+  listCaption: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
   center: { alignItems: "center", justifyContent: "center" },
   muted: { fontSize: 14 },
   errorText: { fontSize: 15, lineHeight: 21, marginTop: 8, textAlign: "center" },

@@ -10,6 +10,9 @@ const KEYS = {
   SAVED_CITIES: "@prayer_times/saved_cities",
   PRAYER_CACHE: "@prayer_times/prayer_cache",
   AUDIO_RECITER: "@prayer_times/audio_reciter",
+  // Listen mode ("Слушать") — separate UX from the reading-mode reciter.
+  LISTEN_RECITER: "@prayer_times/quran_listen_reciter",
+  LISTEN_POSITION: "@prayer_times/quran_listen_position",
 };
 
 // --- theme ---
@@ -160,4 +163,58 @@ export async function saveReciter(reciterId) {
 
 export async function getReciter() {
   return await AsyncStorage.getItem(KEYS.AUDIO_RECITER);
+}
+
+// --- Listen mode ("Слушать") reciter + last position ----------------------
+// Stored SEPARATELY from the reading-mode AUDIO_RECITER: the listen player
+// has its own reciter universe (60 full-surah reciters) and its own
+// "continue where you left off" position.
+//
+// The position is the OFFSET IN THE FULL SURAH TRACK (milliseconds), not
+// an ayah number: the Listen player plays ONE continuous per-surah audio
+// file, so the natural resume point is a track position.
+
+export async function saveListenReciter(reciterId) {
+  await AsyncStorage.setItem(KEYS.LISTEN_RECITER, reciterId);
+}
+
+export async function getListenReciter() {
+  const value = await AsyncStorage.getItem(KEYS.LISTEN_RECITER);
+  // migration: the old registry's ids (ey:…/af:…) no longer exist —
+  // a stored value that is not in the new universe is dropped by the
+  // caller (getListenReciter returns the raw string; the screens validate
+  // against the registry and fall back to the default).
+  return value;
+}
+
+// Position = { surah: 1..114, ms: >=0 } — the resume offset in the full
+// surah track (validated on read). ms is capped at 24h to keep the
+// storage sane.
+export async function saveListenPosition(surah, ms) {
+  const s = Number(surah);
+  const m = Number(ms);
+  if (!Number.isInteger(s) || s < 1 || s > 114) return;
+  if (!Number.isFinite(m) || m < 0 || m > 24 * 60 * 60 * 1000) return;
+  try {
+    await AsyncStorage.setItem(KEYS.LISTEN_POSITION, JSON.stringify({ surah: s, ms: Math.floor(m) }));
+  } catch (e) {
+    // position write is best-effort only
+  }
+}
+
+export async function getListenPosition() {
+  try {
+    const value = await AsyncStorage.getItem(KEYS.LISTEN_POSITION);
+    if (!value) return null;
+    const parsed = JSON.parse(value);
+    const s = Number(parsed.surah);
+    const m = Number(parsed.ms);
+    // legacy {surah, ayah} positions have no track-ms meaning —
+    // start that surah from the beginning
+    if (!Number.isInteger(s) || s < 1 || s > 114) return null;
+    if (!Number.isFinite(m) || m < 0) return { surah: s, ms: 0 };
+    return { surah: s, ms: Math.min(Math.floor(m), 24 * 60 * 60 * 1000) };
+  } catch (e) {
+    return null;
+  }
 }

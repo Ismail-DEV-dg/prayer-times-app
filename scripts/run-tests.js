@@ -423,6 +423,155 @@ test("Hijri: monotonic progression across a Gregorian month", () => {
   }
 });
 
+// ================= LISTEN MODE: FULL-SURAH RECITER REGISTRY =================
+// The Listen player's reciter registry: 60 famous reciters, each with a
+// COMPLETE 114-surah full-track set (verified live 2026-09-14: every
+// server probed on 001/002/018/036/055/114 — 360/360 HTTP 200).
+// RU/EN search aliases, full-surah URL builders, same-human fallback.
+// The READING-mode RECITERS (3 EveryAyah) are untouched.
+
+const audioRegistry = load("services/quranSurahAudioRegistry.js");
+
+test("Listen registry: exactly 60 famous reciters, unique ids", () => {
+  const all = audioRegistry.LISTEN_RECITERS;
+  assert(all.length === 60, `expected 60, got ${all.length}`);
+  const ids = new Set(all.map((r) => r.id));
+  assert(ids.size === 60, `duplicate ids: ${all.length - ids.size}`);
+  const servers = new Set(all.map((r) => r._server));
+  assert(servers.size === 60, `expected 60 distinct servers, got ${servers.size}`);
+});
+
+test("Listen registry: every id has 'mq:' prefix + non-empty name/aliases/server", () => {
+  for (const r of audioRegistry.LISTEN_RECITERS) {
+    assert(r.id.startsWith("mq:"), `bad id: ${r.id}`);
+    assert(r.name && r.name.length > 2, `empty name: ${r.id}`);
+    assert(r.nameEn && r.nameEn.length > 2, `empty nameEn: ${r.id}`);
+    assert(Array.isArray(r.aliases) && r.aliases.length > 0, `no aliases: ${r.id}`);
+    assert(/^https:\/\/server\d+\.mp3quran\.net\//.test(r._server), `bad server: ${r.id} ${r._server}`);
+  }
+});
+
+test("Listen registry: the verified famous 60 are ALL present (spot ids)", () => {
+  const expected = [
+    "mq:afasy", "mq:husary", "mq:minshawi", "mq:abdulbasit", "mq:ghamdi",
+    "mq:sudais", "mq:shuraim", "mq:yasserdosari", "mq:shatri", "mq:hanirifai",
+    "mq:maher", "mq:ajmi", "mq:matroud", "mq:budair", "mq:juhany",
+    "mq:qatami", "mq:abbad", "mq:hudhaify", "mq:alijaber", "mq:bukhatir",
+    "mq:sahlyassin", "mq:tablawi", "mq:ayyub", "mq:jibreel", "mq:mustafaismail",
+    "mq:albanna", "mq:qasim", "mq:kalbany", "mq:jalil", "mq:lohaidan",
+    "mq:khayyat", "mq:basfar", "mq:soufi", "mq:alzain", "mq:alaqmi",
+    "mq:sultany", "mq:salamah", "mq:asimluhaidan", "mq:ibrahimdosari", "mq:tunaiji",
+    "mq:zaki", "mq:raadkurdi", "mq:balilah", "mq:muhasny", "mq:azizahmad",
+    "mq:akdar", "mq:abusneina", "mq:abdulhakam", "mq:saber", "mq:kafi",
+    "mq:yahyahawwa", "mq:sayegh", "mq:hajjaj", "mq:jazairi", "mq:qahtani",
+    "mq:abdulkareem", "mq:albadr", "mq:obaikan", "mq:qazabri", "mq:salimi",
+  ];
+  const ids = new Set(audioRegistry.LISTEN_RECITERS.map((r) => r.id));
+  for (const id of expected) {
+    assert(ids.has(id), `missing reciter id: ${id}`);
+  }
+});
+
+test("Listen URLs: full-surah format {server}/NNN.mp3 (afasy 18 -> 018.mp3)", () => {
+  const url = audioRegistry.getSurahAudioUrl("mq:afasy", 18);
+  assert(url === "https://server8.mp3quran.net/afs/018.mp3", `got ${url}`);
+  const url1 = audioRegistry.getSurahAudioUrl("mq:husary", 1);
+  assert(url1 === "https://server13.mp3quran.net/husr/001.mp3", `got ${url1}`);
+  const url114 = audioRegistry.getSurahAudioUrl("mq:abdulbasit", 114);
+  assert(url114 === "https://server7.mp3quran.net/basit/114.mp3", `got ${url114}`);
+});
+
+test("Listen URLs: zero-padding for surahs 1..9 and 10..99", () => {
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 1).endsWith("/001.mp3"));
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 9).endsWith("/009.mp3"));
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 10).endsWith("/010.mp3"));
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 99).endsWith("/099.mp3"));
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 100).endsWith("/100.mp3"));
+});
+
+test("Listen URLs: invalid surah / unknown reciter -> null, never malformed", () => {
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 0) === null);
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 115) === null);
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", -1) === null);
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", 1.5) === null);
+  assert(audioRegistry.getSurahAudioUrl("mq:afasy", "2") !== null); // coerced
+  assert(audioRegistry.getSurahAudioUrl("unknown:id", 1) === null);
+  assert(audioRegistry.getSurahAudioUrl(null, 1) === null);
+});
+
+test("Listen fallback: same-human full-surah quranicaudio URL (husary)", () => {
+  const fb = audioRegistry.getSurahAudioFallbackUrl("mq:husary", 2);
+  assert(fb === "https://download.quranicaudio.com/quran/mahmood_khaleel_al-husaree/002.mp3", `got ${fb}`);
+  // reciters without an honest full-surah fallback -> null (PRIMARY only)
+  assert(audioRegistry.getSurahAudioFallbackUrl("mq:hanirifai", 2) === null);
+  assert(audioRegistry.getSurahAudioFallbackUrl("mq:lohaidan", 2) === null); // partial on qa
+  assert(audioRegistry.getSurahAudioFallbackUrl("unknown:id", 2) === null);
+});
+
+test("Listen fallback: fallback URL is ALWAYS a full-surah NNN.mp3 (never an ayah)", () => {
+  for (const r of audioRegistry.LISTEN_RECITERS) {
+    const fb = audioRegistry.getSurahAudioFallbackUrl(r.id, 55);
+    if (fb === null) continue;
+    assert(fb.startsWith("https://download.quranicaudio.com/quran/"), `bad base: ${fb}`);
+    assert(/\/055\.mp3$/.test(fb), `not a full-surah file: ${fb}`);
+    assert(!/ayah|surah\/\d+\/ayah/.test(fb), `ayah-like fallback: ${fb}`);
+  }
+});
+
+test("Listen search: RU and EN queries find the SAME reciter (Alafasy case)", () => {
+  const queries = ["Мишари", "мишари аль-афаси", "Mishari", "Mishary", "Alafasy", "Afasy", "афаси"];
+  for (const q of queries) {
+    const found = audioRegistry.searchListenReciters(q);
+    assert(
+      found.some((r) => r.id === "mq:afasy"),
+      `query "${q}" must find mq:afasy`
+    );
+  }
+});
+
+test("Listen search: normalization (case, trim, spaces, diacritics)", () => {
+  const found = audioRegistry.searchListenReciters("  AlAFasy  ");
+  assert(found.some((r) => r.id === "mq:afasy"), "case/trim must work");
+  assert(audioRegistry.searchListenReciters("Mishary Rashid").some((r) => r.id === "mq:afasy"));
+});
+
+test("Listen search: cross-language for several reciters", () => {
+  assert(audioRegistry.searchListenReciters("Хусари").some((r) => r.id === "mq:husary"));
+  assert(audioRegistry.searchListenReciters("Husary").some((r) => r.id === "mq:husary"));
+  assert(audioRegistry.searchListenReciters("Гамди").some((r) => r.id === "mq:ghamdi"));
+  assert(audioRegistry.searchListenReciters("Ghamdi").some((r) => r.id === "mq:ghamdi"));
+  assert(audioRegistry.searchListenReciters("Муайкли").some((r) => r.id === "mq:maher"));
+  assert(audioRegistry.searchListenReciters("Maher").some((r) => r.id === "mq:maher"));
+  assert(audioRegistry.searchListenReciters("Судайс").some((r) => r.id === "mq:sudais"));
+  assert(audioRegistry.searchListenReciters("Sudais").some((r) => r.id === "mq:sudais"));
+  assert(audioRegistry.searchListenReciters("Бухатир").some((r) => r.id === "mq:bukhatir"));
+  assert(audioRegistry.searchListenReciters("bukhatir").some((r) => r.id === "mq:bukhatir"));
+  assert(audioRegistry.searchListenReciters("Джалиль").some((r) => r.id === "mq:jalil"));
+  assert(audioRegistry.searchListenReciters("Jalil").some((r) => r.id === "mq:jalil"));
+  // English name (nameEn) is searchable too
+  assert(audioRegistry.searchListenReciters("Yasser Ad-Dosari").some((r) => r.id === "mq:yasserdosari"));
+});
+
+test("Listen search: empty query returns the full registry", () => {
+  assert(audioRegistry.searchListenReciters("").length === 60);
+  assert(audioRegistry.searchListenReciters(null).length === 60);
+});
+
+test("Listen default reciter is valid", () => {
+  assert(audioRegistry.DEFAULT_LISTEN_RECITER === "mq:afasy");
+  assert(audioRegistry.getListenReciter("mq:afasy") !== null);
+  assert(audioRegistry.getListenReciter("nope") === null);
+});
+
+test("Reading-mode RECITERS untouched (3 quick reciters)", () => {
+  // loads services/quranApi.js through the same loader
+  const quranApi = load("services/quranApi.js");
+  assert(quranApi.RECITERS.length === 3, `expected 3, got ${quranApi.RECITERS.length}`);
+  assert(quranApi.DEFAULT_RECITER === "ar.alafasy");
+  const url = quranApi.getAyahAudioUrl(2, 200, "ar.alafasy");
+  assert(url === "https://everyayah.com/data/Alafasy_128kbps/002200.mp3", `got ${url}`);
+});
+
 // ================= OUTPUT =================
 
 console.log(results.join("\n"));

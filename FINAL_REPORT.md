@@ -1,28 +1,170 @@
 # FINAL REPORT — Prayer Times App
 
-Дата: 2026-09-13 (обновлено: итерация 8 — Qibla production-lag FIX + визуальные улучшения)
+Дата: 2026-09-14 (обновлено: итерация 9 — FULL-SURAH Listen mode)
 Проект: React Native / Expo приложение для времени намаза.
 База: существующий работающий проект на Expo SDK 54 (APK ранее собирался).
 
 > **Восстановление контекста в новом чате**: этот файл — актуальное состояние
-> проекта. Итерация 8 (последняя) описана в §0.9: найдена и устранена причина
-> production-only лагов Киблы в APK — отсутствие разрешения
-> android.permission.HIGH_SAMPLING_RATE_SENSORS в app.json (механика доказана
-> кодом expo-sensors SensorSubscription.kt: Android 12+ без него =
-> SENSOR_DELAY_NORMAL ≈ 5 Гц; Expo Go разрешение имеет = FASTEST — потому в
-> Expo Go плавно, в APK рывки); fix = строка в app.json + адаптивное окно
-> трекинга в app/qibla.js (страховка от вендор-капов частоты); математика
-> направления НЕ тронута. Плюс: кардинальное кольцо С/В/Ю/З (нативно, тем же
-> пайплайном), пилл направления света в bearing-карточке, BootSplash
-> (components/BootSplash.js), новые assets (куб Каабы + золотая лента +
-> зелёное свечение на #0F172A), prayer-виджеты с русскими именами и подсветкой
-> следующей молитвы. Локальные тесты: unit 30/30, source-system 23/23,
-> qibla smoke 22/22 (новая проверка cardinal unwrapped), nav-audit 69/69,
-> android bundle 3.26 MB. Web export падает на react-native-maps —
-> ПРЕДСУЩЕСТВУЮЩАЯ проблема (воспроизведена на коммите fe8ac7f до итерации 8).
-> Итерация 7 (§0.8): ДУМ РТ в registry. Итерация 6 (§0.7): редизайн Киблы.
-> Итерация 5e (§0.6e): FIX навигации. Итерации 5c, 5b, 5 и более ранние
-> сохранены ниже. Expo SDK 54 / RN 0.81.5 / зависимости — НЕ менялись.
+> проекта. Итерация 9 (последняя) описана в §0.10: режим «Слушать» переделан
+> с ayah-by-ayah на НАСТОЯЩИЙ full-surah player — одна сура = один
+> непрерывный аудиотрек = один Sound (Аль-Кахф показывает 00:00 / ~61:47,
+> а не 5 секунд аята); PRIMARY = mp3quran.net (60 известных чтецов, у
+> каждого ВСЕ 114 сур, `{server}/NNN.mp3`, HTTP Range 206 = seek, без
+> API-ключа; 360/360 живых HTTP-проверок), FALLBACK =
+> download.quranicaudio.com (31 same-human полный путь, все проверены);
+> новый хук useSurahAudio с той же защитой lifecycle (mountedRef/
+> playTokenRef, максимум один Sound); Previous/Next = суры; didJustFinish =
+> авто-переход к следующей суре; сохранение позиции = {surah, ms} (seek
+> внутри трека, никаких выдуманных таймингов аятов); picker с RU/EN-поиском
+> по 60 чтецам; background playback (staysActiveInBackground, WAKE_LOCK,
+> UIBackgroundModes audio). Режим «Читать» (3 чтеца EveryAyah,
+> hooks/useAyahAudio.js, app/surah/[number].js) НЕ тронут. Тесты: unit 46/46
+> (14 новых listen-тестов), surah-audio smoke 12/12 (lifecycle/race/
+> finish/fallback/unmount), registry live-check 44/44 (включая реальные
+> длительности: Аль-Кахф 33 мин, Аль-Бакъара 126 мин), source-system 23/23,
+> android bundle 3.32 MB. Device-тест APK — за пользователем (п.27/§0.10).
+> Итерация 8 (§0.9): Qibla production-lag FIX. Итерация 7 (§0.8): ДУМ РТ.
+> Итерация 6 (§0.7): редизайн Киблы. Итерация 5e (§0.6e): FIX навигации.
+> Expo SDK 54 / RN 0.81.5 / зависимости — НЕ менялись.
+
+---
+
+## 0.10 Итерация 9 — Listen mode: полноценный full-surah player (2026-09-14)
+
+### 0.10.1 Задача
+
+Режим «Слушать» воспроизводил отдельные аяты (5–7 сек → стоп → новый
+Sound → следующий аят; иногда молча останавливался). Требовалась
+музыка/аудиокнига-модель: одна сура = один непрерывный трек
+(`00:00 / 60:00`), большой каталог чтецов (не 1–5; целевые 40–60+,
+минимально 30–40), найденный через реальное исследование источников
+(не EveryAyah/Al Furqan, если они этого не поддерживают), с
+fallback, сохранением чтеца, picker-поиском RU/EN, previous/next
+= суры, автопереходом, background playback; режим «Читать» не трогать;
+никаких новых аудиобиблиотек (expo-av остаётся); не выдумывать
+timestamp'ы аятов.
+
+### 0.10.2 Исследование источников (реальные HTTP-проверки, не гипотезы)
+
+Проверено 2026-09-14 из сети окружения сборки:
+
+| Источник | Full-surah? | Каталог | Вердикт |
+|---|---|---|---|
+| **mp3quran.net** (API `mp3quran.net/api/v3/reciters`) | ДА: `{server}/NNN.mp3`, audio/mpeg, HTTP Range 206 (seek), без ключа | 241 чтец, из них 172 с ПОЛНЫМИ 114 сурами (surah_list сверен с API-дампом) | **PRIMARY** — выбрано 60 самых известных чтецов, у каждого полный набор 114 сур |
+| **download.quranicaudio.com** (API `/api/qaris`, 177 qari) | ДА: `quran/{path}/NNN.mp3`, Range 206 | Полные наборы у большинства, НО есть частичные (Luhaidan: 002 стабильно 404; Maher year-подпапки 404; сборники с переводом исключены) | **FALLBACK** — 31 same-human полный путь, каждый проверен на 001/002/018/036/055/114 |
+| cdn.islamic.network `/quran/audio-surah/` | частично (Alafasy 200; Husary 403) | мал | НЕ выбран |
+| everyayah.com | НЕТ: `002.mp3` → 404 (только per-ayah `SSSAAA.mp3`) | 20 папок | НЕ для «Слушать»; остаётся PRIMARY режима «Читать» |
+| alfurqan.online (Al Furqan) | НЕТ: `/audio/{id}/surah/{s}` (без аята) → 404 — только ayah-level | 44 id | НЕ для «Слушать»; честно оставлен только в памяти проекта как ayah-источник (файл реестра удалён вместе со старым плеером, т.к. ни one, ни другой не умеют full-surah — «не притворяться») |
+| quranicaudio.com (без download-поддомена) | HTML-страницы | — | НЕ выбран |
+
+Верификация PRIMARY (каждый чтец × суры 001/002/018/036/055/114):
+60/60 серверов OK = 360/360 HTTP 200 audio/mpeg. Контроль длительности:
+Афаси Аль-Кахф = 31.9 MB ≈ 33 мин; Афаси Аль-Бакъара = 90 MB ≈ 126 мин —
+реальные полные треки, не аяты.
+
+### 0.10.3 Что сделано (новые/изменённые файлы)
+
+- `services/quranSurahAudioRegistry.js` (НОВЫЙ, замена удалённого
+  `quranAudioRegistry.js`): 60 известных чтецов (id `mq:*`), RU-имя +
+  EN-имя + aliases (RU-транслитерации и EN-написания: «Мишари» /
+  «Mishari» / «Mishary» / «Alafasy» / «Afasy» находят одного);
+  `getSurahAudioUrl(id, surah)` = `{server}/NNN.mp3` (zero-padded,
+  1..114, иначе null); `getSurahAudioFallbackUrl` = quranicaudio
+  same-human ПОЛНЫЙ путь или null (29 чтецов — PRIMARY-only: честная
+  ошибка вместо фейкового «сур-фоллбэка»); `searchListenReciters` —
+  нормализованный поиск (lowercase/trim/NFD-diacritics), `normalizeSearchText`.
+- `hooks/useSurahAudio.js` (НОВЫЙ): один Sound на всю суру; тот же
+  lifecycle-контракт, что useAyahAudio (mountedRef — после unmount ни
+  load, ни записи state; playTokenRef — createAsync, резолвнувшийся
+  после более нового действия, разгружается и НЕ хранится: медленная
+  загрузка суры A никогда не перезапишет/не остановит/не выгрузит суру B;
+  максимум один активный Sound); load(url, key, fallbackUrl, startMillis)
+  с ровно одной попыткой fallback; playPause/play/pause/seekTo/getPosition;
+  status/positionMillis/durationMillis/isBuffering — из
+  onPlaybackStatusUpdate (стрим), didJustFinish → unload → onFinish(key)
+  (только текущий Sound — устаревший finish игнорируется); background:
+  staysActiveInBackground + shouldDuckAndroid (WAKE_LOCK в app.json,
+  UIBackgroundModes audio для iOS уже был).
+- `app/listen/player.js` (ПЕРЕПИСАН): карточка чтеца + «Изменить чтеца»
+  (в picker); «Сура · целиком» + выбор суры (модальный поиск);
+  progress bar ОДНОГО трека с seek-жестом (PanResponder, превью позиции,
+  отпускание = setPositionAsync); время `fmt` с часами (61:47);
+  Play/Pause — весь трек; Previous/Next — суры (не аяты); авто-переход на
+  didJustFinish (114-я сура — честная остановка); «Остановить» = unload;
+  позиция сохраняется {surah, ms} (throttle ~5с + на pause); resume
+  с offset'а при повторном входе (только та же сура).
+- `app/listen/reciter.js` (ПЕРЕПИСАН под новый реестр): 60 чтецов,
+  поиск, RU-имя + EN-подзаголовок, «N чтецов · полные суры».
+- `app/listen/index.js`: валидация сохранённого id против нового
+  реестра (старые ey:/af: id → дефолт/picker).
+- `utils/storage.js`: позиция «Слушать» теперь `{surah, ms}`
+  (легаси {surah, ayah} читается как ms=0 — сура та же, начало трека);
+  валидация на чтение/запись; ms cap 24h.
+- `app/quran.js`: карточка «Слушать» — «60 чтецов · суры целиком».
+- `scripts/run-tests.js`: 14 новых listen-тестов (реестр 60/60, формат
+  URL NNN.mp3, zero-padding, invalid → null, fallback husary-точный +
+  «всегда полный трек, никогда ayah», RU/EN поиск, пустой запрос = 60).
+- Удалён: `services/quranAudioRegistry.js` (ayah-level реестр старого
+  «Слушать»; more не импортируется никем; EveryAyah-часть режима
+  «Читать» живёт в services/quranApi.js и НЕ тронута).
+
+### 0.10.4 Причина «молчаливой остановки» старого «Слушать»
+
+Старый плеер воспроизводил ОДИН аят через useAyahAudio и по didFinish
+переключал на следующий аят: между аятами полный цикл unload → createAsync
+→ загрузка; любой сетевой затык на 5–7-секундном файле = стоп без ошибки
+(ошибка загрузки ставила errorKey, но визуально «просто тишина»), плюс
+race при быстрых переключениях. Новая архитектура устраняет класс
+проблем: один большой трек, один Sound, стрим позиций из
+onPlaybackStatusUpdate, честные статусы (loading/playing/paused/error),
+didJustFinish срабатывает только у текущего Sound.
+
+### 0.10.5 Проверки (все реально выполнены)
+
+- `npm test` — 46/46 PASS (32 прежних + 14 новых listen).
+- surah-audio smoke (sucrase + мок expo-av/React; харнесс
+  %TEMP%\opencode\audio-research\surah-audio-smoke.js) — 12/12 PASS:
+  S1 один Sound; S2 стейтая загрузка A не трогает B; S3 didJustFinish →
+  один auto-next + unload; S3b устаревший finish игнорируется; S4
+  pause/play/seek/playPause; S4b resume offset; S5/S5b/S5c fallback
+  ровно один / обе неудачи = error без retry-loop; S6 unload; S7 стрим
+  position/duration; S8 unmount mid-load без утечки.
+- registry live-check (URLs ровно как строит реестр; реальные HTTP):
+  44/44 PASS — PRIMARY 10 комбинаций (чтецы × суры вкл. 1/2/18/36/55/114),
+  FALLBACK все 31 путь (сура 18), длительности Аль-Кахф 33 мин /
+  Аль-Бакъара 126 мин.
+- Source-system 23/23 PASS (не задета).
+- Синтаксис (sucrase) всех новых/изменённых файлов — OK.
+- Production bundle `npx expo export --platform android` — OK,
+  Hermes HBC 3.32 MB.
+- Device-тест NOT RUN (устройств нет): реальное непрерывное
+  воспроизведение длинной суры, background/lock screen на Redmi и
+  поведение release APK должен проверить пользователь (сценарий ниже).
+
+### 0.10.6 Сценарий device-теста (для пользователя)
+
+1. Коран → Слушать → выбрать «Мишари Рашид аль-Афаси» → сура 18
+   (Аль-Кахф): прогресс должен показать ~61:47 и идти непрерывно
+   (НЕ останавливаться через 5–7 секунд).
+2. Seek пальцем по бару — позиция меняется по всей длине суры.
+3. Previous/Next — суры 17/19. Дождаться конца короткой суры (114) —
+   авто-переход и продолжение без нажатия Play (на 114 — остановка).
+4. Смена чтеца из player → поиск «Хусари» и «Husary» — один чтец;
+   быстрый выбор суры A → сразу суры B — играет B.
+5. Свернуть приложение / заблокировать экран — аудио продолжает играть
+   (проверить в release APK, не только в Expo Go).
+6. Повторный вход в «Слушать» — сразу player, та же сура, resume с
+   сохранённого места трека.
+
+### 0.10.7 Что осталось (будущие задачи)
+
+- Device-тест APK по §0.10.6 (главное — непрерывность длинного трека и
+  background).
+- Ре-верификация каталога mp3quran при существенных изменениях
+  (серверы стабильны годами, но новые чтецы появляются).
+- Аятные timestamp'ы внутри трека — НЕ реализованы (mp3quran не даёт
+  segment metadata; выдумывать тайминги запрещено ТЗ; выбор аята в
+  «Слушать» не предлагается, seek — по треку).
 
 ---
 

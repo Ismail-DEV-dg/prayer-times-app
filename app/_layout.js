@@ -33,6 +33,9 @@ function AppShell() {
         <Stack.Screen name="mosques" />
         <Stack.Screen name="qibla" />
         <Stack.Screen name="quran" />
+        <Stack.Screen name="listen/index" options={{ animationDuration: 200 }} />
+        <Stack.Screen name="listen/reciter" options={{ animationDuration: 280 }} />
+        <Stack.Screen name="listen/player" options={{ animationDuration: 280 }} />
         <Stack.Screen name="surah/[number]" options={{ animationDuration: 320 }} />
         <Stack.Screen name="settings" />
       </Stack>

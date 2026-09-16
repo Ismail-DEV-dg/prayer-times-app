@@ -22,6 +22,19 @@ import { Audio } from "expo-av";
 //
 // expo-av is the SDK 54 audio module (expo-audio is newer but
 // expo-av ~16.0.8 is the bundled, verified version for this SDK).
+//
+// Player extensions (Listen mode) — additive only, the original API
+// (play/stop/playingKey/loadingKey/errorKey/paused) is unchanged:
+// - setOnFinish(fn): optional callback invoked when the CURRENT sound
+//   finishes (didJustFinish). The player screen uses it to advance to
+//   the next ayah. The internal unload-on-finish behavior is preserved;
+// - getPosition(): playback position + duration of the current sound
+//   (for the progress bar), null when nothing is loaded;
+// - background playback: the audio mode keeps the sound active in the
+//   background (staysActiveInBackground: true on both platforms —
+//   iOS additionally needs UIBackgroundModes "audio" in app.json, which
+//   is configured there). Works through the SAME single-Sound
+//   architecture — no second audio system.
 export function useAyahAudio() {
   const soundRef = useRef(null);
   const mountedRef = useRef(true);
@@ -30,6 +43,13 @@ export function useAyahAudio() {
   const [loadingKey, setLoadingKey] = useState(null);
   const [errorKey, setErrorKey] = useState(null);
   const [paused, setPaused] = useState(false);
+
+  // Optional finish callback (Listen player auto-advance). Kept in a ref
+  // so play() never needs to change identity when the callback changes.
+  const onFinishRef = useRef(null);
+  const setOnFinish = useCallback((fn) => {
+    onFinishRef.current = typeof fn === "function" ? fn : null;
+  }, []);
 
   // Releases the current Sound (if any) and invalidates every
   // in-flight load. Safe to call at any time, mounted or not.
@@ -54,6 +74,24 @@ export function useAyahAudio() {
   const stop = useCallback(async () => {
     await unload();
   }, [unload]);
+
+  // Playback position of the current sound (ms), for the progress bar.
+  // Resolves to null when nothing is loaded.
+  const getPosition = useCallback(async () => {
+    const sound = soundRef.current;
+    if (!sound) return null;
+    try {
+      const status = await sound.getStatusAsync();
+      if (!status.isLoaded) return null;
+      return {
+        positionMillis: status.positionMillis || 0,
+        durationMillis: status.durationMillis || 0,
+        isPlaying: status.isPlaying === true,
+      };
+    } catch (e) {
+      return null;
+    }
+  }, []);
 
   // play(url, key, fallbackUrl = null) — loads and plays; guards
   // against double-taps. fallbackUrl is optional and may be absent.
@@ -92,6 +130,11 @@ export function useAyahAudio() {
           await Audio.setAudioModeAsync({
             allowsRecordingIOS: false,
             playsInSilentModeIOS: true,
+            // Background playback (Listen mode): keep the sound active
+            // when the app is backgrounded / the screen is off. iOS also
+            // needs UIBackgroundModes: ["audio"] (app.json); Android
+            // holds a partial wake lock while a Sound is playing.
+            staysActiveInBackground: true,
             shouldDuckAndroid: true,
             playThroughEarpieceAndroid: false,
           });
@@ -101,7 +144,12 @@ export function useAyahAudio() {
             (status) => {
               if (status.isLoaded && status.didJustFinish) {
                 // only the CURRENT sound may react to its own finish
-                if (soundRef.current === sound) unload();
+                if (soundRef.current === sound) {
+                  unload();
+                  // Notify the player (auto-advance). Called AFTER the
+                  // internal unload so the player sees a clean state.
+                  if (onFinishRef.current) onFinishRef.current(key);
+                }
               }
             }
           );
@@ -160,5 +208,5 @@ export function useAyahAudio() {
     };
   }, []);
 
-  return { play, stop, playingKey, loadingKey, errorKey, paused };
+  return { play, stop, playingKey, loadingKey, errorKey, paused, setOnFinish, getPosition };
 }
