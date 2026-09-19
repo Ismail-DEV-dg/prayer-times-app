@@ -16,6 +16,16 @@ import {
   searchListenReciters,
 } from "../../services/quranSurahAudioRegistry";
 
+// Russian plural form: 1 чтец, 2–4 чтеца, 5+ чтецов
+function pluralReciters(n) {
+  const abs = Math.abs(n) % 100;
+  const mod10 = abs % 10;
+  if (abs > 10 && abs < 20) return "чтецов";
+  if (mod10 === 1) return "чтец";
+  if (mod10 >= 2 && mod10 <= 4) return "чтеца";
+  return "чтецов";
+}
+
 // Reciter picker for the Listen mode. All 60 full-surah reciters, a
 // searchable compact list (RU + EN spellings find the same reciter).
 //
@@ -107,7 +117,7 @@ export default function ListenReciterScreen() {
         ListFooterComponent={
           data.length ? (
             <Text style={[styles.footer, { color: colors.textSecondary }]}>
-              {data.length} чтецов · полные суры · поиск на русском и английском
+              {data.length} {pluralReciters(data.length)} · полные суры · поиск на русском и английском
             </Text>
           ) : null
         }

@@ -3,12 +3,16 @@ import { View, Text, StyleSheet, Animated, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme } from "../theme/ThemeContext";
 
+// More distinct icons: each prayer has a unique visual cue.
+// Fajr = pre-dawn (crescent + star), Sunrise = sunny + warm,
+// Dhuhr = full sun overhead, Asr = afternoon (partly cloudy),
+// Maghrib = sunset, Isha = night moon.
 const ICONS = {
-  Fajr: "partly-sunny-outline",
+  Fajr: "moon-outline",
   Sunrise: "sunny-outline",
-  Dhuhr: "sunny-outline",
-  Asr: "sunny",
-  Maghrib: "moon-outline",
+  Dhuhr: "sunny",
+  Asr: "partly-sunny-outline",
+  Maghrib: "cloudy-night-outline",
   Isha: "moon",
 };
 

@@ -10,6 +10,16 @@ import { resolvePrayerSource } from "../../services/officialSources";
 
 const THEME_LABELS = { light: "Светлая", dark: "Тёмная", system: "Системная" };
 
+// Russian plural form: 1 город, 2–4 города, 5+ городов
+function pluralCities(n) {
+  const abs = Math.abs(n) % 100;
+  const mod10 = abs % 10;
+  if (abs > 10 && abs < 20) return "городов";
+  if (mod10 === 1) return "город";
+  if (mod10 >= 2 && mod10 <= 4) return "города";
+  return "городов";
+}
+
 // Settings tab: structured list of sections. Every large parameter
 // opens its own screen (/settings/theme, /settings/method, ...);
 // the main screen shows the currently selected value.
@@ -86,7 +96,7 @@ export default function SettingsScreen() {
         {renderRow(
           "bookmark-outline",
           "Сохранённые города",
-          `${savedCities.length} ${savedCities.length === 1 ? "город" : "городов"}`,
+          `${savedCities.length} ${pluralCities(savedCities.length)}`,
           () => router.push("/location")
         )}
 

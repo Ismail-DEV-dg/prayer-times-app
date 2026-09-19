@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useAppTheme } from "../theme/ThemeContext";
 import { useAppData } from "../utils/AppDataContext";
 import { isSameCity } from "../utils/city";
@@ -9,9 +10,12 @@ import { isSameCity } from "../utils/city";
 // Selecting a city changes ONLY the schedule (selectedCity); the GPS
 // position (currentLocation) stays untouched. Add/remove of the
 // current city lives on the Home screen's dedicated button.
+// Tapping the current city chip opens the Location screen so the user
+// can search or switch — consistent with tapping the header city name.
 export default function CitySwitcher() {
   const { colors } = useAppTheme();
   const { savedCities, selectedCity, selectCity } = useAppData();
+  const router = useRouter();
 
   const current = selectedCity;
 
@@ -28,7 +32,8 @@ export default function CitySwitcher() {
               styles.chip,
               { borderColor: colors.accent, backgroundColor: colors.accentSoft },
             ]}
-            onPress={() => {}}
+            onPress={() => router.push("/location")}
+            accessibilityLabel="Открыть экран местоположения"
           >
             <Ionicons name="location" size={13} color={colors.accent} />
             <Text style={[styles.chipText, { color: colors.accent }]} numberOfLines={1}>

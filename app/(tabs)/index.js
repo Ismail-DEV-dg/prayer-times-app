@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   LayoutAnimation,
   UIManager,
   Platform,
+  Animated,
+  Easing,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,6 +45,19 @@ export default function HomeScreen() {
   } = useAppData();
   const router = useRouter();
   const [sourceToastVisible, setSourceToastVisible] = useState(false);
+
+  // One-time entrance for the date/hijri block so the content flows in
+  // gently alongside the PrayerCard stagger cascade.
+  const dateEntrance = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(dateEntrance, {
+      toValue: 1,
+      duration: 300,
+      delay: 80,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [dateEntrance]);
 
   // ALL hooks must run on every render — none may sit below the early
   // status returns, otherwise React sees a changing hook order when
@@ -179,17 +194,31 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.dateBlock}>
-          <Text style={[styles.date, { color: colors.textSecondary }]}>
-            {formatDateInTimeZone(tz)}
-          </Text>
-          {hijriText ? (
-            <Text style={[styles.hijri, { color: colors.textSecondary }]}>{hijriText}</Text>
+        <Animated.View
+          style={{
+            opacity: dateEntrance,
+            transform: [
+              {
+                translateY: dateEntrance.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [10, 0],
+                }),
+              },
+            ],
+          }}
+        >
+          <View style={styles.dateBlock}>
+            <Text style={[styles.date, { color: colors.textSecondary }]}>
+              {formatDateInTimeZone(tz)}
+            </Text>
+            {hijriText ? (
+              <Text style={[styles.hijri, { color: colors.textSecondary }]}>{hijriText}</Text>
+            ) : null}
+          </View>
+          {city?.timezone ? (
+            <Text style={[styles.tz, { color: colors.textSecondary }]}>{city.timezone}</Text>
           ) : null}
-        </View>
-        {city?.timezone ? (
-          <Text style={[styles.tz, { color: colors.textSecondary }]}>{city.timezone}</Text>
-        ) : null}
+        </Animated.View>
 
         {/* toggle the current city in the saved list; never re-runs GPS */}
         <TouchableOpacity

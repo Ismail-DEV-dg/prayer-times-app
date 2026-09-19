@@ -15,6 +15,7 @@ import {
 //
 // Subtle motion (native driver, no logic changes): a one-time entrance
 // fade/slide and a gentle pulsing "live" dot next to the label.
+// When the next prayer is tomorrow, a small "Завтра" badge appears.
 export default function NextPrayer({ prayers, timezone }) {
   const { colors } = useAppTheme();
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -95,12 +96,20 @@ export default function NextPrayer({ prayers, timezone }) {
         <Text style={[styles.label, { color: colors.textOnActive }]}>
           Следующий намаз
         </Text>
+        {next.tomorrow ? (
+          <View style={[styles.tomorrowBadge, { backgroundColor: "rgba(255,255,255,0.18)" }]}>
+            <Text style={[styles.tomorrowText, { color: colors.textOnActive }]}>Завтра</Text>
+          </View>
+        ) : null}
       </View>
       <Text style={[styles.name, { color: colors.textOnActive }]}>{next.name}</Text>
       <Text style={[styles.time, { color: colors.textOnActive }]}>{next.time}</Text>
-      <Text style={[styles.countdown, { color: colors.textOnActive }]}>
-        через {formatCountdown(msLeft)}
-      </Text>
+      <View style={styles.countdownRow}>
+        <Text style={[styles.countdownPrefix, { color: colors.textOnActive }]}>через </Text>
+        <Text style={[styles.countdown, { color: colors.textOnActive }]}>
+          {formatCountdown(msLeft)}
+        </Text>
+      </View>
     </Animated.View>
   );
 }
@@ -118,7 +127,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 5,
   },
-  // subtle top-left light glint inside the hero card (pure decoration)
+  // subtle top-right light glint inside the hero card (pure decoration)
   glow: {
     position: "absolute",
     top: -40,
@@ -131,7 +140,16 @@ const styles = StyleSheet.create({
   labelRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   label: { fontSize: 13, opacity: 0.85, fontWeight: "600" },
+  tomorrowBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  tomorrowText: { fontSize: 11, fontWeight: "700", opacity: 0.9 },
   name: { fontSize: 22, fontWeight: "700" },
   time: { fontSize: 36, fontWeight: "800", marginVertical: 2 },
-  countdown: { fontSize: 15, opacity: 0.9, fontVariant: ["tabular-nums"] },
+  countdownRow: { flexDirection: "row", alignItems: "baseline", marginTop: 2 },
+  countdownPrefix: { fontSize: 13, opacity: 0.75 },
+  countdown: { fontSize: 15, opacity: 0.9, fontVariant: ["tabular-nums"], fontWeight: "600" },
 });

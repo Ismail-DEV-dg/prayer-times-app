@@ -216,40 +216,64 @@ export default function ListenPlayerScreen() {
   };
 
   // --- seek bar (drag over the whole surah track) -------------------------
+  // We track the bar's on-screen X position (pageX from onLayout) so that
+  // during a drag we can compute:
+  //   ratio = (gestureState.moveX - barPageX) / barWidth
+  // This is reliable even when the touch wanders outside the bar view.
+  // Using evt.nativeEvent.locationX in onPanResponderMove is NOT reliable
+  // because the event coordinate origin can shift mid-gesture on Android.
   const barWidthRef = useRef(1);
-  const seekBarPan = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (evt) => {
-          const ratio = clamp01(evt.nativeEvent.locationX / Math.max(1, barWidthRef.current));
-          seekPreviewRef.current = ratio * (audio.durationMillis || 0);
-          setSeekPreview(ratio);
-        },
-        onPanResponderMove: (evt, gestureState) => {
-          const ratio = clamp01(
-            (evt.nativeEvent.locationX - 0) / Math.max(1, barWidthRef.current)
-          );
-          seekPreviewRef.current = ratio * (audio.durationMillis || 0);
-          setSeekPreview(ratio);
-        },
-        onPanResponderRelease: () => {
-          const target = seekPreviewRef.current;
-          setSeekPreview(null);
-          if (Number.isFinite(target)) {
-            audio.seekTo(target).catch(() => {});
-          }
-        },
-        onPanResponderTerminate: () => setSeekPreview(null),
-      }),
-    // seek bar behavior does not depend on identity of audio; duration
-    // is read at gesture time
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [audio.durationMillis]
-  );
+  const barPageXRef = useRef(0);   // absolute screen X of the bar's left edge
+  const durationRef = useRef(0);   // read at gesture time, avoids stale closure
+  const seekPreviewRef = useRef(null);
+  const barViewRef = useRef(null);
+
+  // Keep durationRef in sync
+  useEffect(() => {
+    durationRef.current = audio.durationMillis || 0;
+  }, [audio.durationMillis]);
+
   const [seekPreview, setSeekPreview] = useState(null); // 0..1 or null
-  const seekPreviewRef = useRef(0);
+
+  // PanResponder created ONCE — no deps. All values are read from refs.
+  const seekBarPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        // Fallback: if measure() failed or hasn't run, calculate pageX dynamically
+        // locationX is the relative touch position in the bar, pageX is absolute
+        if (barPageXRef.current === 0 && evt.nativeEvent.pageX > 0 && evt.nativeEvent.locationX >= 0) {
+          barPageXRef.current = evt.nativeEvent.pageX - evt.nativeEvent.locationX;
+        }
+
+        const ratio = clamp01(
+          (evt.nativeEvent.pageX - barPageXRef.current) / Math.max(1, barWidthRef.current)
+        );
+        seekPreviewRef.current = ratio;
+        setSeekPreview(ratio);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        const ratio = clamp01(
+          (gestureState.moveX - barPageXRef.current) / Math.max(1, barWidthRef.current)
+        );
+        seekPreviewRef.current = ratio;
+        setSeekPreview(ratio);
+      },
+      onPanResponderRelease: () => {
+        const ratio = seekPreviewRef.current;
+        setSeekPreview(null);
+        seekPreviewRef.current = null;
+        if (ratio != null && Number.isFinite(ratio) && durationRef.current > 0) {
+          audio.seekTo(ratio * durationRef.current).catch(() => {});
+        }
+      },
+      onPanResponderTerminate: () => {
+        seekPreviewRef.current = null;
+        setSeekPreview(null);
+      },
+    })
+  ).current;
 
   const durationMs = audio.durationMillis || 0;
   const positionMs = audio.positionMillis || 0;
@@ -345,9 +369,13 @@ export default function ListenPlayerScreen() {
       {/* progress of the WHOLE surah track */}
       <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View
+          ref={barViewRef}
           style={[styles.progressBar, { backgroundColor: colors.accentSoft }]}
           onLayout={(e) => {
             barWidthRef.current = e.nativeEvent.layout.width;
+            barViewRef.current?.measure?.((x, y, width, height, pageX) => {
+              if (pageX != null) barPageXRef.current = pageX;
+            });
           }}
           {...seekBarPan.panHandlers}
         >
@@ -356,7 +384,13 @@ export default function ListenPlayerScreen() {
               styles.progressFill,
               { backgroundColor: colors.accent, width: `${progressRatio * 100}%` },
             ]}
-          />
+          >
+            {/* Thumb: visible drag handle at the current position */}
+            <View
+              pointerEvents="none"
+              style={[styles.progressThumb, { backgroundColor: colors.accent, borderColor: colors.card }]}
+            />
+          </View>
         </View>
         <View style={styles.progressTimes}>
           <Text style={[styles.progressTime, { color: colors.textSecondary }]}>
@@ -415,13 +449,6 @@ export default function ListenPlayerScreen() {
         </Text>
       ) : null}
 
-      <TouchableOpacity
-        style={[styles.stopRow, { borderColor: colors.border }]}
-        onPress={onStop}
-      >
-        <Ionicons name="stop-circle-outline" size={16} color={colors.textSecondary} />
-        <Text style={[styles.stopText, { color: colors.textSecondary }]}>Остановить</Text>
-      </TouchableOpacity>
 
       {/* surah picker modal */}
       <Modal visible={surahPickerOpen} animationType="slide" transparent={false} onRequestClose={() => setSurahPickerOpen(false)}>
@@ -552,8 +579,17 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 14,
   },
-  progressBar: { height: 22, borderRadius: 11, overflow: "hidden", justifyContent: "center" },
-  progressFill: { height: 6, borderRadius: 3, marginLeft: 0 },
+  progressBar: { height: 22, borderRadius: 11, overflow: "visible", justifyContent: "center" },
+  progressFill: { height: 6, borderRadius: 3, marginLeft: 0, justifyContent: "center", overflow: "visible" },
+  progressThumb: {
+    position: "absolute",
+    right: -8,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    top: -5,
+  },
   progressTimes: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
   progressTime: { fontSize: 12, fontVariant: ["tabular-nums"] },
   controls: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 34 },

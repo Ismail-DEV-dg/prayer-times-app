@@ -56,6 +56,19 @@ export default function CitySearch({ onSelect }) {
           autoCorrect={false}
         />
         {loading && <ActivityIndicator size="small" color={colors.accent} />}
+        {!loading && query.length > 0 && (
+          <TouchableOpacity
+            onPress={() => {
+              setQuery("");
+              setResults([]);
+              setError(null);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Очистить поиск"
+          >
+            <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {error && <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>}

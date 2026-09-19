@@ -4,17 +4,25 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme } from "../theme/ThemeContext";
 import { methodName } from "../services/prayerApi";
 
-// Small auto-dismissing popup (about 2.6 s) describing where the
-// shown schedule comes from. Only real data from the API layer is
-// displayed — nothing is invented. Not a separate screen: a mini
-// overlay anchored near the source badge.
-const VISIBLE_MS = 2600;
+// Small auto-dismissing popup describing where the shown schedule comes
+// from. Only real data from the API layer is displayed — nothing invented.
+// Not a separate screen: a mini overlay anchored near the source badge.
+// Auto-dismiss after VISIBLE_MS; user can also tap ✕ to close immediately.
+const VISIBLE_MS = 4000;
 
 export default function SourceInfoToast({ visible, source, fromCache, calcMethod, onClose }) {
   const { colors } = useAppTheme();
   const opacity = useRef(new Animated.Value(0)).current;
   const rise = useRef(new Animated.Value(12)).current;
   const hideTimer = useRef(null);
+
+  const startHideAnimation = () => {
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => onClose());
+  };
 
   useEffect(() => {
     if (visible) {
@@ -34,13 +42,14 @@ export default function SourceInfoToast({ visible, source, fromCache, calcMethod
         }),
       ]).start();
       if (hideTimer.current) clearTimeout(hideTimer.current);
-      hideTimer.current = setTimeout(onClose, VISIBLE_MS);
+      hideTimer.current = setTimeout(startHideAnimation, VISIBLE_MS);
     } else {
       opacity.setValue(0);
     }
     return () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   if (!visible || !source) return null;
@@ -55,7 +64,6 @@ export default function SourceInfoToast({ visible, source, fromCache, calcMethod
 
   return (
     <Animated.View
-      pointerEvents="none"
       style={[
         styles.toast,
         {
@@ -72,6 +80,16 @@ export default function SourceInfoToast({ visible, source, fromCache, calcMethod
         <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
           {source.name || typeLabel}
         </Text>
+        <TouchableOpacity
+          onPress={() => {
+            if (hideTimer.current) clearTimeout(hideTimer.current);
+            startHideAnimation();
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel="Закрыть"
+        >
+          <Ionicons name="close" size={16} color={colors.textSecondary} />
+        </TouchableOpacity>
       </View>
       <Text style={[styles.line, { color: colors.textSecondary }]}>Тип: {typeLabel}</Text>
       {source.type === "calculated" && methodLabel ? (
@@ -106,7 +124,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
   title: { fontSize: 14, fontWeight: "700", flex: 1 },
   line: { fontSize: 12, lineHeight: 16 },
 });
