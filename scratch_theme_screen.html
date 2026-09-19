@@ -1,0 +1,948 @@
+<!DOCTYPE html><html lang="ru" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport">
+<title>Темы приложения — Расписание молитв</title>
+<!-- Tailwind CSS v3 with Forms & Container-queries plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration -->
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', '"SF Pro Text"', 'Roboto', 'Inter', 'sans-serif'],
+          },
+          boxShadow: {
+            'phone-glow': '0 20px 40px -15px rgba(0, 0, 0, 0.7), 0 0 25px 2px rgba(56, 189, 248, 0.15)',
+            'card-active': '0 8px 25px -5px rgba(59, 130, 246, 0.3)',
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom Styling -->
+<style data-purpose="base-styling">
+    /* iOS smooth scrolling and safe areas */
+    body {
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    /* Custom scrollbar hiding */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Mosque illustration transition */
+    .theme-transition-all {
+      transition: background 0.4s ease, border-color 0.4s ease, color 0.3s ease, fill 0.4s ease, opacity 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    /* Stars twinkling animation */
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50% { opacity: 0.9; transform: scale(1.2); }
+    }
+    .star-twinkle-1 { animation: twinkle 3s ease-in-out infinite; }
+    .star-twinkle-2 { animation: twinkle 2.4s ease-in-out infinite 0.7s; }
+    .star-twinkle-3 { animation: twinkle 3.6s ease-in-out infinite 1.3s; }
+
+    /* Mosque windows glowing transition */
+    .window-glow {
+      transition: fill 0.4s ease, opacity 0.4s ease, filter 0.4s ease;
+    }
+  </style>
+<!-- END: Custom Styling -->
+</head>
+<body class="bg-[#0b0f17] text-slate-100 font-sans min-h-screen pb-28 antialiased selection:bg-cyan-500 selection:text-white"><svg aria-hidden="true" class="inline-defs-container" style="position:absolute;width:0;height:0;overflow:hidden"></svg>
+<!-- BEGIN: MainHeader -->
+<header class="sticky top-0 z-40 bg-[#0b0f17]/90 backdrop-blur-md border-b border-slate-800/80 px-4 pt-4 pb-3">
+<div class="max-w-md mx-auto flex items-center justify-between">
+<!-- Back Navigation Button -->
+<button aria-label="Назад" class="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/60 active:scale-95 transition-all" type="button">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"></path>
+</svg>
+</button>
+<!-- Center Title -->
+<div class="text-center">
+<h1 class="text-lg font-bold tracking-tight text-slate-100">Темы приложения</h1>
+</div>
+<!-- Quick Info placeholder -->
+<div class="w-10 -mr-2 flex items-center justify-center">
+<button aria-label="Справка" class="text-slate-400 hover:text-slate-200 text-xs" type="button">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- Subtitle caption -->
+<p class="text-center text-xs sm:text-sm text-slate-400 mt-1 max-w-sm mx-auto">
+  Выберите стиль, который подходит именно вам
+</p>
+</header>
+<!-- END: MainHeader -->
+<!-- BEGIN: MainContent -->
+<main class="max-w-md mx-auto px-4 pt-4 pb-8 space-y-5">
+<!-- BEGIN: LivePreviewSection -->
+<section aria-labelledby="live-preview-heading" class="flex flex-col items-center">
+<div class="flex items-center justify-between w-full px-1 mb-2.5">
+<span class="text-xs font-semibold uppercase tracking-wider text-slate-400" id="live-preview-heading">Предпросмотр</span>
+<div class="flex items-center space-x-2">
+<!-- Mosque Background Toggle -->
+<label class="flex items-center space-x-1.5 cursor-pointer bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/80 text-[11px] text-slate-300 select-none">
+<span class="">Фон мечети</span>
+<input checked="" class="sr-only peer" id="mosque-bg-toggle" type="checkbox">
+<div class="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:rounded-full after:h-3.5 after:w-3 after:transition-all peer-checked:bg-cyan-500 relative"></div>
+</label>
+<span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-cyan-300 font-medium border border-slate-700" id="current-theme-label" style="color: rgb(192, 132, 252);">Фиолетовый</span>
+</div>
+</div>
+<!-- Live iOS Phone Mockup Container -->
+<div class="relative w-[312px] h-[590px] rounded-[44px] p-[9px] bg-gradient-to-b from-slate-600 via-slate-800 to-slate-900 shadow-phone-glow border border-slate-700/60 ring-1 ring-white/10" id="phone-frame">
+<!-- Physical iPhone Dynamic Island bar -->
+<div class="absolute top-[16px] left-1/2 -translate-x-1/2 w-28 h-4 bg-black rounded-full z-30 flex items-center justify-center pointer-events-none">
+<div class="w-2.5 h-2.5 rounded-full bg-[#101010] mr-2"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-[#081b2a]/90"></div>
+</div>
+<!-- Phone Inner Screen Display -->
+<div class="theme-transition-all relative w-full h-full rounded-[36px] overflow-hidden flex flex-col justify-between p-3.5 pt-7 select-none shadow-inner text-slate-100" id="mockup-screen" style="color: rgb(250, 245, 255);">
+<!-- ARTWORK BACKGROUND: Dynamic Sky, Celestial Bodies & Mosque Silhouette -->
+<div class="absolute inset-0 pointer-events-none overflow-hidden z-0" id="mosque-backdrop-container" style="opacity: 1;">
+<!-- Sky background layer (dynamic gradients) -->
+<div class="theme-transition-all absolute inset-0" id="mosque-sky" style="opacity: 1; background: radial-gradient(140% 90% at 85% 15%, rgb(126, 34, 206) 0%, rgb(76, 29, 149) 45%, rgb(30, 9, 56) 100%);"></div>
+<!-- Stars layer (for dark/night themes) -->
+<svg class="absolute top-6 left-0 right-0 w-full h-44 theme-transition-all" fill="none" id="mosque-stars" style="opacity: 1;" viewBox="0 0 300 160" xmlns="http://www.w3.org/2000/svg">
+<circle class="star-twinkle-1" cx="25" cy="40" fill="#fff" opacity="0.6" r="1"></circle>
+<circle class="star-twinkle-2" cx="78" cy="22" fill="#fff" opacity="0.7" r="1.2"></circle>
+<circle class="star-twinkle-3" cx="140" cy="55" fill="#fff" opacity="0.5" r="0.9"></circle>
+<circle class="star-twinkle-1" cx="210" cy="28" fill="#fff" opacity="0.8" r="1.2"></circle>
+<circle class="star-twinkle-2" cx="275" cy="45" fill="#fff" opacity="0.6" r="1"></circle>
+<circle class="star-twinkle-3" cx="185" cy="70" fill="#fff" opacity="0.4" r="0.8"></circle>
+<circle class="star-twinkle-1" cx="95" cy="65" fill="#fff" opacity="0.7" r="1.1"></circle>
+<circle class="star-twinkle-2" cx="45" cy="80" fill="#fff" opacity="0.4" r="0.8"></circle>
+<circle class="star-twinkle-3" cx="250" cy="80" fill="#fff" opacity="0.5" r="0.9"></circle>
+</svg>
+<!-- Celestial Element: Crescent Moon or Sun -->
+<div class="absolute top-16 right-5 theme-transition-all" id="celestial-element" style="top: 16px; right: 18px;">
+<svg class="w-6 h-6 drop-shadow-[0_0_8px_rgba(255,255,255,0.7)]" style="color: #f3e8ff" fill="currentColor" viewBox="0 0 24 24">
+<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+</svg>
+</div>
+<!-- Grand Atmospheric Mosque Silhouette (Standard Theme SVG) -->
+<div class="absolute bottom-0 left-0 right-0 h-72 theme-transition-all flex items-end justify-center pointer-events-none" id="mosque-silhouette-wrapper">
+<svg class="w-full h-full preserve-3d" fill="none" preserveAspectRatio="none" viewBox="0 0 312 280" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="mosqueGradFront" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop id="grad-front-stop1" offset="0%" stop-color="#37105a"></stop>
+<stop id="grad-front-stop2" offset="100%" stop-color="#160426"></stop>
+</linearGradient>
+<linearGradient id="mosqueGradBack" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop id="grad-back-stop1" offset="0%" stop-color="#591a8e"></stop>
+<stop id="grad-back-stop2" offset="100%" stop-color="#2b0a49"></stop>
+</linearGradient>
+<linearGradient id="horizonGlow" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop id="glow-stop1" offset="0%" stop-color="#c084fc" stop-opacity="0.35"></stop>
+<stop id="glow-stop2" offset="100%" stop-color="#000000" stop-opacity="0"></stop>
+</linearGradient>
+<!-- Filter for warm glowing windows -->
+<filter height="200%" id="windowGlowFilter" width="200%" x="-50%" y="-50%">
+<feGaussianBlur result="blur" stdDeviation="2.2"></feGaussianBlur>
+<feMerge>
+<feMergeNode in="blur"></feMergeNode>
+<feMergeNode in="blur"></feMergeNode>
+<feMergeNode in="SourceGraphic"></feMergeNode>
+</feMerge>
+</filter>
+</defs>
+<!-- Mosque Group -->
+<g id="standard-mosque-group"><ellipse cx="156" cy="180" fill="url(#horizonGlow)" id="mosque-glow-ellipse" rx="160" ry="60"></ellipse>
+<g fill="url(#mosqueGradBack)" id="mosque-layer-back" opacity="0.55">
+<rect height="122" rx="0.5" width="5" x="18" y="58"></rect>
+<polygon points="20.5,42 24,58 17,58"></polygon>
+<rect height="2.5" rx="0.5" width="9" x="16" y="88"></rect>
+<rect height="142" rx="0.5" width="6" x="288" y="38"></rect>
+<polygon points="291,22 295,38 287,38"></polygon>
+<rect height="3" rx="0.5" width="10" x="286" y="68"></rect>
+<rect height="64" width="148" x="82" y="116"></rect>
+<rect height="5" width="156" x="78" y="112"></rect>
+<rect height="6" width="124" x="94" y="106"></rect>
+<rect height="5" width="96" x="108" y="101"></rect>
+</g>
+<g fill="url(#mosqueGradFront)" id="mosque-layer-front">
+<rect height="142" rx="1" width="8" x="44" y="48"></rect>
+<polygon points="48,32 53,48 43,48"></polygon>
+<circle cx="48" cy="30" r="1.5"></circle>
+<rect height="3" rx="0.5" width="12" x="42" y="75"></rect>
+<rect height="3" rx="0.5" width="12" x="42" y="108"></rect>
+<rect height="164" rx="1" width="9" x="260" y="26"></rect>
+<polygon points="264.5,10 270,26 259,26"></polygon>
+<circle cx="264.5" cy="8.5" r="1.5"></circle>
+<rect height="3.5" rx="0.8" width="15" x="257" y="56"></rect>
+<rect height="3" rx="0.8" width="13" x="258" y="92"></rect>
+<rect height="3" rx="0.8" width="13" x="258" y="128"></rect>
+<rect height="58" width="208" x="52" y="132"></rect>
+<rect height="5" width="216" x="48" y="128"></rect>
+<rect height="84" width="100" x="106" y="106"></rect>
+<rect height="5" width="108" x="102" y="101"></rect>
+<rect height="5" width="88" x="112" y="96"></rect>
+<rect height="4" width="68" x="122" y="92"></rect>
+<rect height="106" width="312" x="0" y="174"></rect>
+</g>
+<g id="mosque-windows-group">
+<path class="window-glow" d="M138 140 Q138 122 156 122 Q174 122 174 140 L174 174 L138 174 Z" fill="#fde68a" opacity="0.95" filter="url(#windowGlowFilter)"></path>
+<path class="window-glow" d="M116 150 Q116 138 126 138 Q136 138 136 150 L136 174 L116 174 Z" fill="#fbbf24" opacity="0.85" filter="url(#windowGlowFilter)"></path>
+<path class="window-glow" d="M176 150 Q176 138 186 138 Q196 138 196 150 L196 174 L176 174 Z" fill="#fbbf24" opacity="0.85" filter="url(#windowGlowFilter)"></path>
+<path class="window-glow" d="M74 154 Q74 145 82 145 Q90 145 90 154 L90 172 L74 172 Z" fill="#fbbf24" opacity="0.85" filter="url(#windowGlowFilter)"></path>
+<path class="window-glow" d="M222 154 Q222 145 230 145 Q238 145 238 154 L238 172 L222 172 Z" fill="#fbbf24" opacity="0.85" filter="url(#windowGlowFilter)"></path>
+<rect class="window-glow" fill="#fbbf24" height="7" opacity="0.75" rx="1" width="2" x="47" y="86" filter="url(#windowGlowFilter)"></rect>
+<rect class="window-glow" fill="#fbbf24" height="8" opacity="0.75" rx="1" width="2.5" x="263.5" y="72" filter="url(#windowGlowFilter)"></rect>
+<rect class="window-glow" fill="#fbbf24" height="8" opacity="0.75" rx="1" width="2.5" x="263.5" y="108" filter="url(#windowGlowFilter)"></rect>
+</g></g>
+</svg>
+</div>
+</div>
+<!-- TOP UI CONTENT: Foreground layer over Mosque Background -->
+<div class="relative z-10">
+<!-- Screen Status Bar (Time, Wifi, Battery) -->
+<div class="flex justify-between items-center text-[10px] font-semibold px-2 mb-1 tracking-tight theme-transition-all" id="mockup-statusbar" style="color: rgb(255, 255, 255);">
+<span class="" id="mockup-status-time">9:41</span>
+<div class="flex items-center space-x-1">
+<!-- Signal icon -->
+<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+<path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path>
+</svg>
+<!-- Wifi icon -->
+<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.077 13.308-5.077 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0 1 1 0 01-1.414 1.414zm-2.829 2.828a3 3 0 00-4.242 0 1 1 0 01-1.415-1.414 5 5 0 017.072 0 1 1 0 01-1.415 1.414zM10 16a1 1 0 100-2 1 1 0 000 2z" fill-rule="evenodd"></path>
+</svg>
+<!-- Battery icon -->
+<div class="w-4 h-2 border border-current rounded-sm p-[0.5px] flex items-center">
+<div class="w-2.5 h-full bg-current rounded-[0.5px]"></div>
+</div>
+</div>
+</div>
+<!-- Phone Location & Top Controls -->
+<div class="flex items-center justify-between px-1 mt-0.5" id="mockup-header-row">
+<div class="flex items-center space-x-1.5 cursor-pointer">
+<!-- Location pin -->
+<svg class="w-3.5 h-3.5 theme-transition-all" fill="currentColor" id="mockup-location-pin" style="color: rgb(192, 132, 252);" viewBox="0 0 20 20">
+<path clip-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" fill-rule="evenodd"></path>
+</svg>
+<span class="text-xs font-semibold theme-transition-all" id="mockup-location-title" style="color: rgb(255, 255, 255);">Мекк��</span>
+<!-- Chevron down -->
+<svg class="w-3 h-3 opacity-60 theme-transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</div>
+<!-- Settings Gear Button -->
+<button aria-label="Настройки" class="w-6 h-6 rounded-full flex items-center justify-center opacity-75 hover:opacity-100 theme-transition-all" id="mockup-gear-btn" style="color: rgb(255, 255, 255);" type="button">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+<!-- Date & Islamic Calendar Info -->
+<div class="px-1 mt-1 text-left">
+<p class="text-[11px] font-medium tracking-tight theme-transition-all" id="mockup-date-solar" style="color: rgb(255, 255, 255);">Сегодня, 16 апреля 2025</p>
+<p class="text-[9.5px] opacity-75 theme-transition-all" id="mockup-date-hijri" style="color: rgba(233, 213, 255, 0.75);">17 рамадан 1446</p>
+</div>
+<!-- Active Prayer Card -->
+<div class="theme-transition-all relative mt-2 rounded-2xl p-2.5 overflow-hidden backdrop-blur-md border shadow-sm" id="mockup-hero-card" style="background: linear-gradient(135deg, rgba(126, 34, 206, 0.45) 0%, rgba(30, 9, 56, 0.85) 100%); border-color: rgba(255, 255, 255, 0.1);">
+<div class="relative z-10 flex items-center space-x-2.5">
+<!-- Round Mosque Icon badge -->
+<div class="theme-transition-all w-9 h-9 rounded-full border flex items-center justify-center shrink-0" id="mockup-prayer-badge" style="background-color: rgba(192, 132, 252, 0.22); border-color: rgb(192, 132, 252);">
+<!-- Elegant Mosque dome vector badge -->
+<svg class="w-5 h-5 theme-transition-all" fill="currentColor" id="mockup-prayer-icon" style="color: rgb(243, 232, 255);" viewBox="0 0 24 24"><path d="M2 20h20v2H2v-2zm2-1h16v-6H4v6zm4-8h8v2H8v-2zm1-3h6v2H9V8zm2-3h2v2h-2V5zm-8 4h2v10H5V9zm1-5h1l-1-2-1 2h1zm12 5h2v10h-2V9zm1-5h1l-1-2-1 2h1z"></path><path d="M10 14.5c0-1.1.9-2 2-2s2 .9 2 2V19h-4v-4.5z"></path></svg>
+</div>
+<div class="flex-1 flex justify-between items-center pr-1">
+<div>
+<div class="flex items-center space-x-1.5">
+<span class="text-[11px] font-semibold theme-transition-all" id="mockup-prayer-name" style="color: rgb(255, 255, 255);">Фаджр</span>
+<span class="theme-transition-all text-[8px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider" id="mockup-soon-badge" style="background-color: rgba(192, 132, 252, 0.22); color: rgb(233, 213, 255);">скоро</span>
+</div>
+<!-- Big Prayer Time Display -->
+<div class="text-xl font-bold tracking-tight leading-none mt-0.5 theme-transition-all" id="mockup-prayer-time" style="color: rgb(255, 255, 255);">
+  03:45
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Prayer Times Timetable List -->
+<div class="theme-transition-all mt-2 space-y-1 text-xs" id="mockup-schedule-list">
+<!-- Восход -->
+<div class="flex items-center justify-between py-1 px-2.5 rounded-lg border backdrop-blur-sm theme-transition-all schedule-row" style="background: rgba(192, 132, 252, 0.08); border-color: rgba(192, 132, 252, 0.2);">
+<div class="flex items-center space-x-2">
+<svg class="w-3.5 h-3.5 opacity-75 schedule-icon" fill="currentColor" style="color: rgb(233, 213, 255);" viewBox="0 0 24 24">
+<path d="M12 4.5a1 1 0 011 1V8a1 1 0 11-2 0V5.5a1 1 0 011-1zm-6.364 2.85a1 1 0 011.414 0l1.768 1.768a1 1 0 01-1.414 1.414L5.636 8.764a1 1 0 010-1.414zm12.728 0a1 1 0 010 1.414l-1.768 1.768a1 1 0 11-1.414-1.414l1.768-1.768a1 1 0 011.414 0zM3 14a1 1 0 011-1h16a1 1 0 110 2H4a1 1 0 01-1-1zm3 4a1 1 0 011-1h10a1 1 0 110 2H7a1 1 0 01-1-1z"></path>
+</svg>
+<span class="text-[10.5px] font-medium schedule-title" style="color: rgb(250, 245, 255);">Восход</span>
+</div>
+<span class="text-[11px] font-semibold schedule-time" style="color: rgb(255, 255, 255);">05:16</span>
+</div>
+<!-- Зухр -->
+<div class="flex items-center justify-between py-1 px-2.5 rounded-lg border backdrop-blur-sm theme-transition-all schedule-row" style="background: rgba(192, 132, 252, 0.08); border-color: rgba(192, 132, 252, 0.2);">
+<div class="flex items-center space-x-2">
+<svg class="w-3.5 h-3.5 opacity-75 schedule-icon" fill="currentColor" style="color: rgb(233, 213, 255);" viewBox="0 0 24 24">
+<path d="M12 7a5 5 0 100 10 5 5 0 000-10zM2 12a1 1 0 011-1h2a1 1 0 110 2H3a1 1 0 01-1-1zm16 0a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zM12 2a1 1 0 011 1v2a1 1 0 11-2 0V3a1 1 0 011-1zm0 16a1 1 0 011 1v2a1 1 0 11-2 0v-2a1 1 0 011-1z"></path>
+</svg>
+<span class="text-[10.5px] font-medium schedule-title" style="color: rgb(250, 245, 255);">Зухр</span>
+</div>
+<span class="text-[11px] font-semibold schedule-time" style="color: rgb(255, 255, 255);">11:51</span>
+</div>
+<!-- Аср -->
+<div class="flex items-center justify-between py-1 px-2.5 rounded-lg border backdrop-blur-sm theme-transition-all schedule-row" style="background: rgba(192, 132, 252, 0.08); border-color: rgba(192, 132, 252, 0.2);">
+<div class="flex items-center space-x-2">
+<svg class="w-3.5 h-3.5 opacity-75 schedule-icon" fill="currentColor" style="color: rgb(233, 213, 255);" viewBox="0 0 24 24">
+<path d="M12 8a4 4 0 100 8 4 4 0 000-8zm-8 4a1 1 0 011-1h2a1 1 0 110 2H5a1 1 0 01-1-1zm14 0a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z"></path>
+</svg>
+<span class="text-[10.5px] font-medium schedule-title" style="color: rgb(250, 245, 255);">Аср</span>
+</div>
+<span class="text-[11px] font-semibold schedule-time" style="color: rgb(255, 255, 255);">15:22</span>
+</div>
+<!-- Магриб -->
+<div class="flex items-center justify-between py-1 px-2.5 rounded-lg border backdrop-blur-sm theme-transition-all schedule-row" style="background: rgba(192, 132, 252, 0.08); border-color: rgba(192, 132, 252, 0.2);">
+<div class="flex items-center space-x-2">
+<svg class="w-3.5 h-3.5 opacity-75 schedule-icon" fill="currentColor" style="color: rgb(233, 213, 255);" viewBox="0 0 24 24">
+<path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+</svg>
+<span class="text-[10.5px] font-medium schedule-title" style="color: rgb(250, 245, 255);">Магриб</span>
+</div>
+<span class="text-[11px] font-semibold schedule-time" style="color: rgb(255, 255, 255);">18:16</span>
+</div>
+<!-- Иша -->
+<div class="flex items-center justify-between py-1 px-2.5 rounded-lg border backdrop-blur-sm theme-transition-all schedule-row" style="background: rgba(192, 132, 252, 0.08); border-color: rgba(192, 132, 252, 0.2);">
+<div class="flex items-center space-x-2">
+<svg class="w-3.5 h-3.5 opacity-75 schedule-icon" fill="currentColor" style="color: rgb(233, 213, 255);" viewBox="0 0 24 24">
+<path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+</svg>
+<span class="text-[10.5px] font-medium schedule-title" style="color: rgb(250, 245, 255);">Иша</span>
+</div>
+<span class="text-[11px] font-semibold schedule-time" style="color: rgb(255, 255, 255);">19:31</span>
+</div>
+</div>
+</div>
+<!-- Bottom Mini Tab Navigation Bar (Anchored at bottom of phone) -->
+<div class="theme-transition-all relative z-10 mt-auto pt-2 pb-0.5 border-t border-white/10 backdrop-blur-sm flex items-center justify-around text-[8px]" id="mockup-tabbar" style="background: transparent; border-color: rgba(255, 255, 255, 0.1);">
+<div class="flex flex-col items-center space-y-0.5" id="tab-home" style="color: rgb(192, 132, 252);">
+<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+<span class="font-semibold tab-label">Главная</span>
+</div>
+<div class="flex flex-col items-center space-y-0.5 tab-secondary opacity-60" style="color: rgb(148, 163, 184);">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="tab-label">Коран</span>
+</div>
+<div class="flex flex-col items-center space-y-0.5 tab-secondary opacity-60" style="color: rgb(148, 163, 184);">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"></circle><path d="M12 3v3m0 12v3M3 12h3m12 0h3m-5-5l-4 4-2-2" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="tab-label">Кибла</span>
+</div>
+<div class="flex flex-col items-center space-y-0.5 tab-secondary opacity-60" style="color: rgb(148, 163, 184);">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="tab-label">Карта</span>
+</div>
+<div class="flex flex-col items-center space-y-0.5 tab-secondary opacity-60" style="color: rgb(148, 163, 184);">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="tab-label">Ещё</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: LivePreviewSection -->
+<!-- BEGIN: ThemeSelectorSection -->
+<section aria-label="Доступные темы" class="mt-3">
+<div class="flex items-center justify-between mb-3 px-1">
+<h2 class="text-sm font-semibold text-slate-300">Коллекция стилей (6)</h2>
+<span class="text-xs text-slate-500">Нажмите для выбора</span>
+</div>
+<!-- Theme Cards Grid (6 themes) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="theme-cards-container">
+<!-- Theme 1: Dark (Тёмная) -->
+<div class="theme-card active group relative p-3.5 rounded-2xl border-2 cursor-pointer transition-all hover:border-cyan-400 border-slate-800 bg-slate-900/60" data-purpose="theme-card" data-theme-id="dark" role="button" tabindex="0">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="font-bold text-sm group-hover:text-cyan-300 transition-colors text-slate-100">Тёмная</h3>
+<p class="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+  Классический тёмный стиль. Удобен для глаз, особенно в ночное время.
+</p>
+</div>
+<span class="selection-check w-5 h-5 rounded-full bg-cyan-500 text-slate-950 items-center justify-center shrink-0 ml-2 shadow hidden" style="background-color: rgb(6, 182, 212);">
+<svg class="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<div class="flex items-center space-x-1.5 mt-3">
+<span class="w-4 h-4 rounded-full bg-[#081225] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#1e293b] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#38bdf8] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#64748b] border border-white/20"></span>
+</div>
+</div>
+<!-- Theme 2: Light (Светлая) -->
+<div class="theme-card group relative p-3.5 rounded-2xl border cursor-pointer transition-all hover:border-slate-700 hover:bg-slate-850 border-slate-800 bg-slate-900/60" data-purpose="theme-card" data-theme-id="light" role="button" tabindex="0">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="font-bold text-sm group-hover:text-teal-200 transition-colors text-slate-100">Светлая</h3>
+<p class="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+  Чистый и спокойный дизайн. Подходит для дневного использования.
+</p>
+</div>
+<span class="selection-check w-5 h-5 rounded-full bg-teal-600 text-white items-center justify-center shrink-0 ml-2 shadow hidden" style="background-color: rgb(13, 148, 136);">
+<svg class="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<div class="flex items-center space-x-1.5 mt-3">
+<span class="w-4 h-4 rounded-full bg-[#ffffff] border border-black/20 shadow-sm" title="Чистый белый"></span>
+<span class="w-4 h-4 rounded-full bg-[#f5ede4] border border-black/15 shadow-sm" title="Теплый крем"></span>
+<span class="w-4 h-4 rounded-full bg-[#c99e75] border border-black/15 shadow-sm" title="Терракота / Песок"></span>
+<span class="w-4 h-4 rounded-full bg-[#2a9d8f] border border-black/15 shadow-sm" title="Мягкий бирюзовый"></span>
+</div>
+</div>
+<!-- Theme 3: Nature (Природа) -->
+<div class="theme-card group relative p-3.5 rounded-2xl border cursor-pointer transition-all hover:border-slate-700 hover:bg-slate-850 border-slate-800 bg-slate-900/60" data-purpose="theme-card" data-theme-id="nature" role="button" tabindex="0">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="font-bold text-sm group-hover:text-emerald-300 transition-colors text-slate-100">Природа</h3>
+<p class="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+  Спокойные зелёные оттенки и природные мотивы. Создаёт ощущение гармонии.
+</p>
+</div>
+<span class="selection-check w-5 h-5 rounded-full bg-emerald-500 text-slate-950 items-center justify-center shrink-0 ml-2 shadow hidden" style="background-color: rgb(16, 185, 129);">
+<svg class="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<div class="flex items-center space-x-1.5 mt-3">
+<span class="w-4 h-4 rounded-full bg-[#064e3b] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#047857] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#10b981] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#d1fae5] border border-white/20"></span>
+</div>
+</div>
+<!-- Theme 4: Blue (Синий) -->
+<div class="theme-card group relative p-3.5 rounded-2xl border cursor-pointer transition-all hover:border-slate-700 hover:bg-slate-850 border-slate-800 bg-slate-900/60" data-purpose="theme-card" data-theme-id="blue" role="button" tabindex="0">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="font-bold text-sm group-hover:text-blue-400 transition-colors text-slate-100">Синий</h3>
+<p class="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+  Спокойный и современный стиль. Делает интерфейс более выразительным.
+</p>
+</div>
+<span class="selection-check w-5 h-5 rounded-full bg-blue-500 text-white items-center justify-center shrink-0 ml-2 shadow hidden" style="background-color: rgb(59, 130, 246);">
+<svg class="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<div class="flex items-center space-x-1.5 mt-3">
+<span class="w-4 h-4 rounded-full bg-[#0f172a] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#1e40af] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#3b82f6] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#93c5fd] border border-white/20"></span>
+</div>
+</div>
+<!-- Theme 5: Violet (Фиолетовый) -->
+<div class="theme-card group relative p-3.5 rounded-2xl border cursor-pointer transition-all hover:border-slate-700 hover:bg-slate-850 border-cyan-500 bg-slate-900 shadow-card-active" data-purpose="theme-card" data-theme-id="violet" role="button" tabindex="0">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="font-bold text-sm group-hover:text-purple-300 transition-colors text-slate-100">Фиолетовый</h3>
+<p class="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+  Успокаивающий и стильный. Подходит тем, кто любит необычные цвета.
+</p>
+</div>
+<span class="selection-check w-5 h-5 rounded-full bg-purple-500 text-white items-center justify-center shrink-0 ml-2 shadow flex" style="background-color: rgb(168, 85, 247);">
+<svg class="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<div class="flex items-center space-x-1.5 mt-3">
+<span class="w-4 h-4 rounded-full bg-[#3b0764] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#6b21a8] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#a855f7] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#e9d5ff] border border-white/20"></span>
+</div>
+</div>
+<!-- Theme 6: Minimalism (Минимализм) -->
+<div class="theme-card group relative p-3.5 rounded-2xl border cursor-pointer transition-all hover:border-slate-700 hover:bg-slate-850 border-slate-800 bg-slate-900/60" data-purpose="theme-card" data-theme-id="minimalism" role="button" tabindex="0">
+<div class="flex items-start justify-between">
+<div>
+<h3 class="font-bold text-sm group-hover:text-slate-200 transition-colors text-slate-100">Минимализм</h3>
+<p class="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+  Максимум про��тоты и чистоты. Без лишних деталей.
+</p>
+</div>
+<span class="selection-check w-5 h-5 rounded-full bg-slate-300 text-slate-950 items-center justify-center shrink-0 ml-2 shadow hidden">
+<svg class="w-3 h-3 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</span>
+</div>
+<div class="flex items-center space-x-1.5 mt-3">
+<span class="w-4 h-4 rounded-full bg-[#000000] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#18181b] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#52525b] border border-white/20"></span>
+<span class="w-4 h-4 rounded-full bg-[#a1a1aa] border border-white/20"></span>
+</div>
+</div>
+</div>
+</section>
+<!-- END: ThemeSelectorSection -->
+</main>
+<!-- END: MainContent -->
+<!-- BEGIN: StickyBottomBar -->
+<aside aria-label="Панель применения темы" class="fixed bottom-0 left-0 right-0 z-50 bg-[#0b0f17]/95 backdrop-blur-lg border-t border-slate-800/90 py-3.5 px-4 shadow-2xl">
+<div class="max-w-md mx-auto flex items-center space-x-3">
+<button class="flex-1 py-3.5 px-6 rounded-2xl bg-cyan-500 hover:bg-cyan-400 active:scale-[0.98] text-slate-950 font-bold text-sm sm:text-base tracking-wide flex items-center justify-center space-x-2 transition-all shadow-lg shadow-cyan-500/25" id="apply-theme-button" type="button">
+<svg class="w-5 h-5 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+<span class="">Применить тему</span>
+</button>
+</div>
+</aside>
+<!-- END: StickyBottomBar -->
+<!-- BEGIN: InteractiveScript -->
+<script data-purpose="theme-switcher">
+    // Precise configuration for 6 themes
+    const themesData = {
+      dark: {
+        name: 'Тёмная',
+        skyBg: 'radial-gradient(130% 90% at 85% 10%, #173456 0%, #0d1e33 45%, #050b14 100%)',
+        textColor: '#ffffff',
+        accentColor: '#38bdf8',
+        activeCheckColor: '#06b6d4',
+        heroCardBg: 'linear-gradient(135deg, rgba(23, 52, 86, 0.45) 0%, rgba(8, 18, 32, 0.75) 100%)',
+        heroBorder: 'rgba(255, 255, 255, 0.1)',
+        badgeBg: 'rgba(56, 189, 248, 0.2)',
+        badgeBorder: '#38bdf8',
+        badgeIconColor: '#7dd3fc',
+        badgeText: '#38bdf8',
+        listRowBg: 'rgba(255, 255, 255, 0.05)',
+        listRowBorder: 'rgba(255, 255, 255, 0.08)',
+        listTextColor: '#ffffff',
+        listTimeColor: '#f8fafc',
+        listIconColor: '#94a3b8',
+        tabColor: '#38bdf8',
+        tabMutedColor: '#94a3b8',
+        tabBorder: 'rgba(255, 255, 255, 0.1)',
+        tabBg: 'transparent',
+        hijriColor: 'rgba(125, 211, 252, 0.75)',
+        headerTitleColor: '#ffffff',
+        mosqueFront1: '#0e2338',
+        mosqueFront2: '#050c17',
+        mosqueBack1: '#1b3f66',
+        mosqueBack2: '#0d1f33',
+        glowColor: '#38bdf8',
+        glowOpacity: 0.25,
+        celestialType: 'moon',
+        celestialColor: '#e0f2fe',
+        showStars: true,
+        windowGlow: true,
+        windowColor: '#fbbf24',
+        windowOpacity: '0.85',
+        windowFilter: 'url(#windowGlowFilter)'
+      },
+      light: {
+        name: 'Светлая',
+        skyBg: 'linear-gradient(180deg, #eaf2f5 0%, #f1f6f7 32%, #fbf5ee 72%, #f6ece0 100%)',
+        textColor: '#1e293b',
+        accentColor: '#0d9488',
+        activeCheckColor: '#0d9488',
+        heroCardBg: 'linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(254, 250, 245, 0.78) 100%)',
+        heroBorder: 'rgba(226, 216, 203, 0.8)',
+        badgeBg: 'rgba(13, 148, 136, 0.14)',
+        badgeBorder: 'rgba(13, 148, 136, 0.5)',
+        badgeIconColor: '#0d9488',
+        badgeText: '#0f766e',
+        listRowBg: 'rgba(255, 255, 255, 0.72)',
+        listRowBorder: 'rgba(226, 216, 203, 0.7)',
+        listTextColor: '#334155',
+        listTimeColor: '#0f172a',
+        listIconColor: '#78716c',
+        tabColor: '#0d9488',
+        tabMutedColor: '#64748b',
+        tabBorder: 'rgba(214, 201, 186, 0.65)',
+        tabBg: 'transparent',
+        hijriColor: 'rgba(100, 116, 139, 0.88)',
+        headerTitleColor: '#0f172a',
+        mosqueFront1: '#c49a6c',
+        mosqueFront2: '#a47748',
+        mosqueBack1: '#e0c7a8',
+        mosqueBack2: '#c99e75',
+        glowColor: '#f59e0b',
+        glowOpacity: 0.22,
+        celestialType: 'sun',
+        celestialColor: '#f59e0b',
+        showStars: false,
+        windowGlow: false,
+        windowColor: '#a39987',
+        windowOpacity: '0.42',
+        windowFilter: 'none'
+      },
+      nature: {
+        name: 'Природа',
+        skyBg: 'radial-gradient(140% 100% at 85% 15%, #0d5945 0%, #063d2f 50%, #021a14 100%)',
+        textColor: '#ecfdf5',
+        accentColor: '#10b981',
+        activeCheckColor: '#10b981',
+        heroCardBg: 'linear-gradient(135deg, rgba(13, 89, 69, 0.5) 0%, rgba(2, 26, 20, 0.8) 100%)',
+        heroBorder: 'rgba(255, 255, 255, 0.1)',
+        badgeBg: 'rgba(16, 185, 129, 0.25)',
+        badgeBorder: '#10b981',
+        badgeIconColor: '#6ee7b7',
+        badgeText: '#6ee7b7',
+        listRowBg: 'rgba(16, 185, 129, 0.08)',
+        listRowBorder: 'rgba(16, 185, 129, 0.18)',
+        listTextColor: '#ecfdf5',
+        listTimeColor: '#f0fdf4',
+        listIconColor: '#6ee7b7',
+        tabColor: '#10b981',
+        tabMutedColor: '#94a3b8',
+        tabBorder: 'rgba(255, 255, 255, 0.1)',
+        tabBg: 'transparent',
+        hijriColor: 'rgba(167, 243, 208, 0.75)',
+        headerTitleColor: '#ffffff',
+        mosqueFront1: '#073e30',
+        mosqueFront2: '#021f18',
+        mosqueBack1: '#0f5f4b',
+        mosqueBack2: '#07382c',
+        glowColor: '#34d399',
+        glowOpacity: 0.3,
+        celestialType: 'moon',
+        celestialColor: '#d1fae5',
+        showStars: true,
+        windowGlow: true,
+        windowColor: '#fde68a',
+        windowOpacity: '0.85',
+        windowFilter: 'url(#windowGlowFilter)'
+      },
+      blue: {
+        name: 'Синий',
+        skyBg: 'radial-gradient(140% 100% at 85% 15%, #1e40af 0%, #172554 50%, #030712 100%)',
+        textColor: '#f8fafc',
+        accentColor: '#60a5fa',
+        activeCheckColor: '#3b82f6',
+        heroCardBg: 'linear-gradient(135deg, rgba(30, 64, 175, 0.5) 0%, rgba(15, 23, 42, 0.85) 100%)',
+        heroBorder: 'rgba(255, 255, 255, 0.1)',
+        badgeBg: 'rgba(96, 165, 250, 0.22)',
+        badgeBorder: '#60a5fa',
+        badgeIconColor: '#bfdbfe',
+        badgeText: '#93c5fd',
+        listRowBg: 'rgba(59, 130, 246, 0.08)',
+        listRowBorder: 'rgba(96, 165, 250, 0.18)',
+        listTextColor: '#f8fafc',
+        listTimeColor: '#ffffff',
+        listIconColor: '#93c5fd',
+        tabColor: '#60a5fa',
+        tabMutedColor: '#94a3b8',
+        tabBorder: 'rgba(255, 255, 255, 0.1)',
+        tabBg: 'transparent',
+        hijriColor: 'rgba(191, 219, 254, 0.75)',
+        headerTitleColor: '#ffffff',
+        mosqueFront1: '#122557',
+        mosqueFront2: '#070f2b',
+        mosqueBack1: '#1f3d8a',
+        mosqueBack2: '#0e1c45',
+        glowColor: '#60a5fa',
+        glowOpacity: 0.35,
+        celestialType: 'moon',
+        celestialColor: '#bfdbfe',
+        showStars: true,
+        windowGlow: true,
+        windowColor: '#fbbf24',
+        windowOpacity: '0.88',
+        windowFilter: 'url(#windowGlowFilter)'
+      },
+      violet: {
+        name: 'Фиолетовый',
+        skyBg: 'radial-gradient(140% 90% at 85% 15%, #7e22ce 0%, #4c1d95 45%, #1e0938 100%)',
+        textColor: '#faf5ff',
+        accentColor: '#c084fc',
+        activeCheckColor: '#a855f7',
+        heroCardBg: 'linear-gradient(135deg, rgba(126, 34, 206, 0.45) 0%, rgba(30, 9, 56, 0.85) 100%)',
+        heroBorder: 'rgba(255, 255, 255, 0.1)',
+        badgeBg: 'rgba(192, 132, 252, 0.22)',
+        badgeBorder: '#c084fc',
+        badgeIconColor: '#f3e8ff',
+        badgeText: '#e9d5ff',
+        listRowBg: 'rgba(192, 132, 252, 0.08)',
+        listRowBorder: 'rgba(192, 132, 252, 0.2)',
+        listTextColor: '#faf5ff',
+        listTimeColor: '#ffffff',
+        listIconColor: '#e9d5ff',
+        tabColor: '#c084fc',
+        tabMutedColor: '#94a3b8',
+        tabBorder: 'rgba(255, 255, 255, 0.1)',
+        tabBg: 'transparent',
+        hijriColor: 'rgba(233, 213, 255, 0.75)',
+        headerTitleColor: '#ffffff',
+        mosqueFront1: '#37105a',
+        mosqueFront2: '#160426',
+        mosqueBack1: '#591a8e',
+        mosqueBack2: '#2b0a49',
+        glowColor: '#c084fc',
+        glowOpacity: 0.35,
+        celestialType: 'moon',
+        celestialColor: '#f3e8ff',
+        showStars: true,
+        windowGlow: true,
+        windowColor: '#fde68a',
+        windowOpacity: '0.85',
+        windowFilter: 'url(#windowGlowFilter)'
+      },
+      minimalism: {
+        name: 'Минимализм',
+        skyBg: 'linear-gradient(180deg, #27272a 0%, #18181b 50%, #09090b 100%)',
+        textColor: '#f4f4f5',
+        accentColor: '#a1a1aa',
+        activeCheckColor: '#e4e4e7',
+        heroCardBg: 'linear-gradient(135deg, rgba(39, 39, 42, 0.75) 0%, rgba(24, 24, 27, 0.9) 100%)',
+        heroBorder: 'rgba(255, 255, 255, 0.1)',
+        badgeBg: 'rgba(255, 255, 255, 0.1)',
+        badgeBorder: '#a1a1aa',
+        badgeIconColor: '#f4f4f5',
+        badgeText: '#f4f4f5',
+        listRowBg: 'rgba(39, 39, 42, 0.45)',
+        listRowBorder: 'rgba(63, 63, 70, 0.6)',
+        listTextColor: '#f4f4f5',
+        listTimeColor: '#ffffff',
+        listIconColor: '#a1a1aa',
+        tabColor: '#f4f4f5',
+        tabMutedColor: '#71717a',
+        tabBorder: 'rgba(255, 255, 255, 0.1)',
+        tabBg: 'transparent',
+        hijriColor: 'rgba(161, 161, 170, 0.8)',
+        headerTitleColor: '#ffffff',
+        mosqueFront1: '#111113',
+        mosqueFront2: '#050507',
+        mosqueBack1: '#1c1c20',
+        mosqueBack2: '#111114',
+        glowColor: '#71717a',
+        glowOpacity: 0.15,
+        celestialType: 'moon',
+        celestialColor: '#e4e4e7',
+        showStars: false,
+        windowGlow: true,
+        windowColor: '#fef3c7',
+        windowOpacity: '0.78',
+        windowFilter: 'url(#windowGlowFilter)'
+      }
+    };
+
+    // DOM Elements
+    const mockScreen = document.getElementById('mockup-screen');
+    const mockSky = document.getElementById('mosque-sky');
+    const standardMosqueGroup = document.getElementById('standard-mosque-group');
+
+    const mockHeroCard = document.getElementById('mockup-hero-card');
+    const mockBadge = document.getElementById('mockup-prayer-badge');
+    const mockPrayerIcon = document.getElementById('mockup-prayer-icon');
+    const mockSoonBadge = document.getElementById('mockup-soon-badge');
+    const mockPrayerName = document.getElementById('mockup-prayer-name');
+    const mockPrayerTime = document.getElementById('mockup-prayer-time');
+    const mockStatusbar = document.getElementById('mockup-statusbar');
+    const mockLocationPin = document.getElementById('mockup-location-pin');
+    const mockLocationTitle = document.getElementById('mockup-location-title');
+    const mockGearBtn = document.getElementById('mockup-gear-btn');
+    const mockDateSolar = document.getElementById('mockup-date-solar');
+    const mockDateHijri = document.getElementById('mockup-date-hijri');
+    const mockScheduleRows = document.querySelectorAll('.schedule-row');
+    const mockScheduleTitles = document.querySelectorAll('.schedule-title');
+    const mockScheduleTimes = document.querySelectorAll('.schedule-time');
+    const mockScheduleIcons = document.querySelectorAll('.schedule-icon');
+    const labelCurrent = document.getElementById('current-theme-label');
+    const themeCards = document.querySelectorAll('[data-purpose="theme-card"]');
+    const applyButton = document.getElementById('apply-theme-button');
+    const toggleMosque = document.getElementById('mosque-bg-toggle');
+    const mosqueBackdrop = document.getElementById('mosque-backdrop-container');
+    const celestialContainer = document.getElementById('celestial-element');
+    const starsElement = document.getElementById('mosque-stars');
+    const tabHome = document.getElementById('tab-home');
+    const tabSecondaries = document.querySelectorAll('.tab-secondary');
+    const mockTabbar = document.getElementById('mockup-tabbar');
+    const mosqueWindows = document.querySelectorAll('.window-glow');
+
+    // SVG Gradient stops for dynamic mosque lighting
+    const gradFrontStop1 = document.getElementById('grad-front-stop1');
+    const gradFrontStop2 = document.getElementById('grad-front-stop2');
+    const gradBackStop1 = document.getElementById('grad-back-stop1');
+    const gradBackStop2 = document.getElementById('grad-back-stop2');
+    const glowStop1 = document.getElementById('glow-stop1');
+
+    function applyTheme(themeId) {
+      const theme = themesData[themeId] || themesData.dark;
+
+      // Sky gradient
+      if (mockSky) {
+        mockSky.style.opacity = '1';
+        mockSky.style.background = theme.skyBg;
+      }
+
+      // Dynamic Mosque SVG Colors
+      if (gradFrontStop1) gradFrontStop1.setAttribute('stop-color', theme.mosqueFront1);
+      if (gradFrontStop2) gradFrontStop2.setAttribute('stop-color', theme.mosqueFront2);
+      if (gradBackStop1) gradBackStop1.setAttribute('stop-color', theme.mosqueBack1);
+      if (gradBackStop2) gradBackStop2.setAttribute('stop-color', theme.mosqueBack2);
+      if (glowStop1) {
+        glowStop1.setAttribute('stop-color', theme.glowColor);
+        glowStop1.setAttribute('stop-opacity', theme.glowOpacity);
+      }
+
+      // Mosque Windows: Daytime Neutral Tone vs Night-time Glowing Windows
+      if (mosqueWindows) {
+        mosqueWindows.forEach(win => {
+          win.setAttribute('fill', theme.windowColor);
+          win.setAttribute('opacity', theme.windowOpacity);
+          if (theme.windowFilter && theme.windowFilter !== 'none') {
+            win.setAttribute('filter', theme.windowFilter);
+          } else {
+            win.removeAttribute('filter');
+          }
+        });
+      }
+
+      // Stars visibility
+      if (starsElement) {
+        starsElement.style.opacity = theme.showStars ? '1' : '0';
+      }
+
+      // Celestial Element (Moon / Sun)
+      if (celestialContainer) {
+        if (theme.celestialType === 'sun') {
+          celestialContainer.innerHTML = `
+            <svg class="w-6 h-6 drop-shadow-[0_0_8px_rgba(217,119,6,0.5)]" style="color: ${theme.celestialColor}" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          `;
+          celestialContainer.style.top = '14px';
+          celestialContainer.style.right = '16px';
+        } else {
+          celestialContainer.innerHTML = `
+            <svg class="w-6 h-6 drop-shadow-[0_0_8px_rgba(255,255,255,0.7)]" style="color: ${theme.celestialColor}" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          `;
+          celestialContainer.style.top = '16px';
+          celestialContainer.style.right = '18px';
+        }
+      }
+
+      // Foreground UI Elements
+      mockScreen.style.color = theme.textColor;
+      mockHeroCard.style.background = theme.heroCardBg;
+      mockHeroCard.style.borderColor = theme.heroBorder;
+
+      if (mockStatusbar) mockStatusbar.style.color = theme.headerTitleColor;
+      if (mockLocationPin) mockLocationPin.style.color = theme.accentColor;
+      if (mockLocationTitle) mockLocationTitle.style.color = theme.headerTitleColor;
+      if (mockGearBtn) mockGearBtn.style.color = theme.headerTitleColor;
+      if (mockDateSolar) mockDateSolar.style.color = theme.headerTitleColor;
+      if (mockDateHijri) mockDateHijri.style.color = theme.hijriColor;
+
+      mockBadge.style.backgroundColor = theme.badgeBg;
+      mockBadge.style.borderColor = theme.badgeBorder;
+      mockPrayerIcon.style.color = theme.badgeIconColor;
+      mockSoonBadge.style.backgroundColor = theme.badgeBg;
+      mockSoonBadge.style.color = theme.badgeText;
+      mockPrayerName.style.color = theme.headerTitleColor;
+      mockPrayerTime.style.color = theme.headerTitleColor;
+
+      mockScheduleRows.forEach(row => {
+        row.style.background = theme.listRowBg;
+        row.style.borderColor = theme.listRowBorder;
+      });
+      mockScheduleTitles.forEach(title => {
+        title.style.color = theme.listTextColor;
+      });
+      mockScheduleTimes.forEach(time => {
+        time.style.color = theme.listTimeColor;
+      });
+      mockScheduleIcons.forEach(icon => {
+        icon.style.color = theme.listIconColor;
+      });
+
+      if (mockTabbar) {
+        mockTabbar.style.background = 'transparent';
+        mockTabbar.style.borderColor = theme.tabBorder;
+      }
+      if (tabHome) tabHome.style.color = theme.tabColor;
+      tabSecondaries.forEach(tab => {
+        tab.style.color = theme.tabMutedColor;
+      });
+
+      // Top Status Pill
+      if (labelCurrent) {
+        labelCurrent.textContent = theme.name;
+        labelCurrent.style.color = theme.accentColor;
+      }
+
+      // Update Selection Checkmarks on Theme Cards
+      themeCards.forEach(card => {
+        const check = card.querySelector('.selection-check');
+        const cid = card.getAttribute('data-theme-id');
+        if (cid === themeId) {
+          card.classList.add('border-cyan-500', 'bg-slate-900', 'shadow-card-active');
+          card.classList.remove('border-slate-800', 'bg-slate-900/60');
+          if (check) {
+            check.classList.remove('hidden');
+            check.classList.add('flex');
+            check.style.backgroundColor = theme.activeCheckColor || '#06b6d4';
+          }
+        } else {
+          card.classList.remove('border-cyan-500', 'bg-slate-900', 'shadow-card-active');
+          card.classList.add('border-slate-800', 'bg-slate-900/60');
+          if (check) {
+            check.classList.add('hidden');
+            check.classList.remove('flex');
+          }
+        }
+      });
+    }
+
+    // Toggle Mosque Silhouette Background
+    if (toggleMosque && mosqueBackdrop) {
+      toggleMosque.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          mosqueBackdrop.style.opacity = '1';
+        } else {
+          mosqueBackdrop.style.opacity = '0.05';
+        }
+      });
+    }
+
+    // Click & Keyboard Navigation on Theme Cards
+    themeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        const themeId = card.getAttribute('data-theme-id');
+        applyTheme(themeId);
+      });
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const themeId = card.getAttribute('data-theme-id');
+          applyTheme(themeId);
+        }
+      });
+    });
+
+    // Apply button feedback
+    applyButton.addEventListener('click', () => {
+      const originalText = applyButton.innerHTML;
+      applyButton.innerHTML = `
+        <svg class="w-5 h-5 text-slate-950 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <span>Тема сохранена!</span>
+      `;
+      setTimeout(() => {
+        applyButton.innerHTML = originalText;
+      }, 1500);
+    });
+
+    // Initialize with Dark theme as default
+    applyTheme('dark');
+  </script>
+<!-- END: InteractiveScript -->
+</body></html>

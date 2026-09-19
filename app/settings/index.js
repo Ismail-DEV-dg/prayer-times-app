@@ -3,12 +3,21 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useAppTheme } from "../../theme/ThemeContext";
+import { useTheme } from "../../theme/ThemeContext";
 import { useAppData } from "../../utils/AppDataContext";
 import { methodName } from "../../services/prayerApi";
 import { resolvePrayerSource } from "../../services/officialSources";
 
-const THEME_LABELS = { light: "Светлая", dark: "Тёмная", system: "Системная" };
+const THEME_LABELS = {
+  dark: "Тёмная",
+  light: "Светлая",
+  nature: "Природа",
+  blue: "Синий",
+  beige: "Бежевый",
+  purple: "Фиолетовый",
+  minimalism: "Минимализм",
+  system: "Системная",
+};
 
 // Russian plural form: 1 город, 2–4 города, 5+ городов
 function pluralCities(n) {
@@ -23,7 +32,7 @@ function pluralCities(n) {
 // Full settings screen (opened from the Settings tab): same
 // structured rows, each parameter opens its own sub-screen.
 export default function FullSettingsScreen() {
-  const { colors, themeMode } = useAppTheme();
+  const { colors, themeMode } = useTheme();
   const {
     calcMethod,
     methodOverridden,
@@ -96,9 +105,11 @@ export default function FullSettingsScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={goBackSafe} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
+        {router.canGoBack() ? (
+          <TouchableOpacity onPress={goBackSafe} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+        ) : null}
         <Text style={[styles.title, { color: colors.text }]}>Все настройки</Text>
       </View>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

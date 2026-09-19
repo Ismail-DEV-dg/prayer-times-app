@@ -13,6 +13,7 @@ const KEYS = {
   // Listen mode ("Слушать") — separate UX from the reading-mode reciter.
   LISTEN_RECITER: "@prayer_times/quran_listen_reciter",
   LISTEN_POSITION: "@prayer_times/quran_listen_position",
+  MOSQUE_BG: "@prayer_times/show_mosque_bg",
 };
 
 // --- theme ---
@@ -23,6 +24,22 @@ export async function saveTheme(theme) {
 
 export async function getSavedTheme() {
   return await AsyncStorage.getItem(KEYS.THEME);
+}
+
+// --- mosque background visibility ---
+
+export async function saveShowMosqueBg(show) {
+  await AsyncStorage.setItem(KEYS.MOSQUE_BG, JSON.stringify(Boolean(show)));
+}
+
+export async function getSavedShowMosqueBg() {
+  const value = await AsyncStorage.getItem(KEYS.MOSQUE_BG);
+  if (value === null) return true;
+  try {
+    return JSON.parse(value);
+  } catch (e) {
+    return true;
+  }
 }
 
 // --- calculation method ---

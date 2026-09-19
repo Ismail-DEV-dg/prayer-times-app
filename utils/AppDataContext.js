@@ -146,7 +146,12 @@ export function AppDataProvider({ children }) {
     }
     try {
       const coords = await getCurrentCoords();
-      const geo = await reverseGeocode(coords.latitude, coords.longitude);
+      let geo = { city: null, country: null, region: null, timezone: null };
+      try {
+        geo = await reverseGeocode(coords.latitude, coords.longitude);
+      } catch (_) {
+        // Geocoding error should not prevent saving accurate GPS coordinates
+      }
       const located = {
         latitude: coords.latitude,
         longitude: coords.longitude,

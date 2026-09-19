@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Animated, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useAppTheme } from "../theme/ThemeContext";
+import { useTheme } from "../theme/ThemeContext";
 
 // More distinct icons: each prayer has a unique visual cue.
 // Fajr = pre-dawn (crescent + star), Sunrise = sunny + warm,
@@ -30,8 +30,15 @@ const NAMES = {
 // caller decides which — usually the next prayer from getNextPrayer).
 // Subtle entrance: fade + slight rise, staggered by row index so the
 // grid appears as a soft cascade (native driver).
-export default function PrayerCard({ name, time, active, index = 0 }) {
-  const { colors } = useAppTheme();
+export default function PrayerCard({
+  name,
+  arabicName,
+  time,
+  isNext = false,
+  isPassed = false,
+  index = 0,
+}) {
+  const { colors } = useTheme();
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

@@ -572,6 +572,194 @@ test("Reading-mode RECITERS untouched (3 quick reciters)", () => {
   assert(url === "https://everyayah.com/data/Alafasy_128kbps/002200.mp3", `got ${url}`);
 });
 
+// ================= THEME ARCHITECTURE & SELECTION UNIQUENESS =================
+
+test("Theme architecture: 6 core styles defined (Тёмная, Светлая, Природа, Синий, Фиолетовый, Минимализм)", () => {
+  const colorsMod = load("theme/colors.js");
+  const meta = colorsMod.THEMES_META;
+  assert(meta.length === 6, `expected 6 themes in meta, got ${meta.length}`);
+  const expectedIds = ["dark", "light", "nature", "blue", "purple", "minimalism"];
+  for (const id of expectedIds) {
+    assert(meta.some((t) => t.id === id), `missing theme id: ${id}`);
+    assert(colorsMod.THEMES[id], `missing theme definition in THEMES for ${id}`);
+  }
+});
+
+test("Theme selector uniqueness: theme selection physically present ONLY in SettingsScreen.js", () => {
+  const fg = (dir) => {
+    let files = [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory() && e.name !== "node_modules" && e.name !== ".git" && e.name !== ".expo") {
+        files = files.concat(fg(full));
+      } else if (e.isFile() && (e.name.endsWith(".js") || e.name.endsWith(".jsx"))) {
+        files.push(full);
+      }
+    }
+    return files;
+  };
+
+  const allSourceFiles = fg(path.join(ROOT, "app")).concat(fg(path.join(ROOT, "components")));
+  const filesWithThemeSelection = [];
+
+  for (const file of allSourceFiles) {
+    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+    const content = fs.readFileSync(file, "utf8");
+    // Look for theme selector UI or setThemeMode calls
+    if (content.includes("setThemeMode(") && !rel.includes("ThemeContext")) {
+      filesWithThemeSelection.push(rel);
+    }
+  }
+
+  // Must only be components/SettingsScreen.js
+  assert(
+    filesWithThemeSelection.length === 1 &&
+      filesWithThemeSelection[0] === "components/SettingsScreen.js",
+    `Theme selection UI must ONLY be in components/SettingsScreen.js, found in: ${filesWithThemeSelection.join(", ")}`
+  );
+
+  // Assert redundant components/ThemeSelector.js does NOT exist
+  assert(
+    !fs.existsSync(path.join(ROOT, "components", "ThemeSelector.js")),
+    "components/ThemeSelector.js must not exist"
+  );
+});
+
+test("Theme hook import integrity: all files calling useTheme/useAppTheme have proper imports", () => {
+  const fg = (dir) => {
+    let files = [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory() && e.name !== "node_modules" && e.name !== ".git" && e.name !== ".expo") {
+        files = files.concat(fg(full));
+      } else if (e.isFile() && (e.name.endsWith(".js") || e.name.endsWith(".jsx"))) {
+        files.push(full);
+      }
+    }
+    return files;
+  };
+
+  const allSourceFiles = fg(path.join(ROOT, "app")).concat(fg(path.join(ROOT, "components")));
+  const missingImports = [];
+
+  for (const file of allSourceFiles) {
+    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+    const content = fs.readFileSync(file, "utf8");
+    const usesUseTheme = /\buseTheme\s*\(/.test(content);
+    const importsUseTheme = /import\s*\{[^}]*\buseTheme\b[^}]*\}\s*from/.test(content);
+    if (usesUseTheme && !importsUseTheme) {
+      missingImports.push(`${rel} (missing useTheme)`);
+    }
+    const usesUseAppTheme = /\buseAppTheme\s*\(/.test(content);
+    const importsUseAppTheme = /import\s*\{[^}]*\buseAppTheme\b[^}]*\}\s*from/.test(content);
+    if (usesUseAppTheme && !importsUseAppTheme) {
+      missingImports.push(`${rel} (missing useAppTheme)`);
+    }
+  }
+
+  assert(
+    missingImports.length === 0,
+    `Missing theme imports found in: ${missingImports.join(", ")}`
+  );
+});
+
+test("Mosque background toggle: storage persistence and theme context wiring", () => {
+  const storageContent = fs.readFileSync(path.join(ROOT, "utils", "storage.js"), "utf8");
+  assert(storageContent.includes("saveShowMosqueBg"), "saveShowMosqueBg must be defined in storage.js");
+  assert(storageContent.includes("getSavedShowMosqueBg"), "getSavedShowMosqueBg must be defined in storage.js");
+
+  const themeContextContent = fs.readFileSync(path.join(ROOT, "theme", "ThemeContext.js"), "utf8");
+  assert(themeContextContent.includes("showMosqueBg"), "showMosqueBg must be exposed in ThemeContext");
+  assert(themeContextContent.includes("setShowMosqueBg"), "setShowMosqueBg must be exposed in ThemeContext");
+
+  const mosqueSilhouetteContent = fs.readFileSync(path.join(ROOT, "components", "MosqueSilhouette.js"), "utf8");
+  assert(mosqueSilhouetteContent.includes("showMosqueBg"), "MosqueSilhouette must read showMosqueBg from theme");
+  assert(mosqueSilhouetteContent.includes("showMosqueBg !== false"), "MosqueSilhouette must conditionally render skylineRow");
+
+  const settingsContent = fs.readFileSync(path.join(ROOT, "components", "SettingsScreen.js"), "utf8");
+  assert(!settingsContent.includes("useState(true)"), "SettingsScreen must not shadow showMosqueBg with local useState");
+});
+
+test("Splash screen consistency: seamless dark boot background (#050c17)", () => {
+  const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, "app.json"), "utf8"));
+  assert(appJson.expo.splash.backgroundColor === "#050c17", "Native splash must be #050c17");
+  assert(appJson.expo.android.adaptiveIcon.backgroundColor === "#050c17", "Adaptive icon background must be #050c17");
+
+  const bootSplashContent = fs.readFileSync(path.join(ROOT, "components", "BootSplash.js"), "utf8");
+  assert(bootSplashContent.includes("#050c17"), "BootSplash container background must be #050c17");
+});
+
+test("Header title alignment: Quran and Qibla titles strictly centered on screen", () => {
+  const quranContent = fs.readFileSync(path.join(ROOT, "components", "QuranScreen.js"), "utf8");
+  assert(quranContent.includes("styles.headerTitleContainer"), "QuranScreen must use headerTitleContainer");
+  assert(quranContent.includes('pointerEvents="none"'), "Quran headerTitleContainer must have pointerEvents='none'");
+
+  const qiblaContent = fs.readFileSync(path.join(ROOT, "app", "qibla.js"), "utf8");
+  assert(qiblaContent.includes("styles.headerTitleContainer"), "qibla.js must use headerTitleContainer");
+  assert(qiblaContent.includes('pointerEvents="none"'), "Qibla headerTitleContainer must have pointerEvents='none'");
+});
+
+test("NextPrayer: does not render (завтра) label", () => {
+  const nextPrayerContent = fs.readFileSync(path.join(ROOT, "components", "NextPrayer.js"), "utf8");
+  assert(!nextPrayerContent.includes("(завтра)"), "NextPrayer must not render '(завтра)'");
+});
+
+test("Stitch Mosque Architecture: strictly without domes, applied across all screens", () => {
+  assert(fs.existsSync(path.join(ROOT, "components", "StitchMosque.js")), "StitchMosque component must exist");
+  const stitchMosqueSrc = fs.readFileSync(path.join(ROOT, "components", "StitchMosque.js"), "utf8");
+  assert(stitchMosqueSrc.includes('viewBox="0 0 312 280"'), "StitchMosque must use Stitch viewBox");
+  assert(stitchMosqueSrc.includes("react-native-svg"), "StitchMosque must use react-native-svg");
+
+  const targetFiles = [
+    path.join(ROOT, "components", "MosqueSilhouette.js"),
+    path.join(ROOT, "components", "SettingsScreen.js"),
+    path.join(ROOT, "components", "QuranScreen.js"),
+    path.join(ROOT, "app", "qibla.js"),
+    path.join(ROOT, "components", "BootSplash.js"),
+  ];
+
+  for (const f of targetFiles) {
+    const content = fs.readFileSync(f, "utf8");
+    assert(content.includes("StitchMosque"), `${path.basename(f)} must import/render StitchMosque`);
+    assert(!content.includes('name="mosque"'), `${path.basename(f)} must not use generic name="mosque" icon`);
+  }
+});
+
+test("Qibla: requests location whenever focused (useFocusEffect + locateUser)", () => {
+  const qiblaContent = fs.readFileSync(path.join(ROOT, "app", "qibla.js"), "utf8");
+  assert(qiblaContent.includes("useFocusEffect"), "qibla.js must use useFocusEffect");
+  assert(qiblaContent.includes("requestGpsLocation"), "qibla.js must define requestGpsLocation");
+  assert(qiblaContent.includes("locateUser"), "qibla.js must call locateUser");
+  assert(qiblaContent.includes("gpsRefreshBtn"), "qibla.js must have gpsRefreshBtn for manual refresh");
+});
+
+test("Source attribution: completely removed from main screen and theme selection", () => {
+  const homeContent = fs.readFileSync(path.join(ROOT, "app", "(tabs)", "index.js"), "utf8");
+  assert(!homeContent.includes("SourceBadge"), "HomeScreen must not import or render SourceBadge");
+  assert(!homeContent.includes("SourceInfoToast"), "HomeScreen must not render SourceInfoToast");
+  assert(!homeContent.includes("footerRow"), "HomeScreen must not have footerRow style");
+
+  const settingsContent = fs.readFileSync(path.join(ROOT, "components", "SettingsScreen.js"), "utf8");
+  assert(!settingsContent.includes("mockupSourceRow"), "SettingsScreen must not render mockupSourceRow");
+  assert(!settingsContent.includes("mockupSourceBadge"), "SettingsScreen must not have mockupSourceBadge");
+});
+
+test("Mosque proportions: un-squashed Stitch aspect ratio (312:280) and lowered offset across main screen and theme settings mockup", () => {
+  const silhouetteContent = fs.readFileSync(path.join(ROOT, "components", "MosqueSilhouette.js"), "utf8");
+  assert(silhouetteContent.includes("SCREEN_WIDTH * (280 / 312)"), "MosqueSilhouette must calculate MOSQUE_HEIGHT to preserve 312:280 Stitch ratio without squashing");
+  assert(silhouetteContent.includes("MOSQUE_BOTTOM = -Math.round"), "MosqueSilhouette must define MOSQUE_BOTTOM to lower the mosque down");
+  assert(silhouetteContent.includes("height={MOSQUE_HEIGHT}"), "MosqueSilhouette must pass MOSQUE_HEIGHT to StitchMosque");
+  assert(silhouetteContent.includes("bottom: MOSQUE_BOTTOM"), "MosqueSilhouette must apply MOSQUE_BOTTOM to skylineRow");
+
+  const settingsContent = fs.readFileSync(path.join(ROOT, "components", "SettingsScreen.js"), "utf8");
+  assert(settingsContent.includes("278 * (280 / 312)"), "SettingsScreen must calculate MOCKUP_MOSQUE_HEIGHT with 312:280 Stitch ratio");
+  assert(settingsContent.includes("MOCKUP_MOSQUE_BOTTOM = -Math.round"), "SettingsScreen must define MOCKUP_MOSQUE_BOTTOM to lower the mockup mosque");
+  assert(settingsContent.includes("height={MOCKUP_MOSQUE_HEIGHT}"), "SettingsScreen must pass MOCKUP_MOSQUE_HEIGHT to StitchMosque");
+  assert(settingsContent.includes("bottom: MOCKUP_MOSQUE_BOTTOM"), "SettingsScreen must apply MOCKUP_MOSQUE_BOTTOM to mockupMosqueWrap");
+});
+
 // ================= OUTPUT =================
 
 console.log(results.join("\n"));

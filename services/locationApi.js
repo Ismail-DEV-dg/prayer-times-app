@@ -16,20 +16,40 @@ export async function requestLocationPermission() {
   }
 }
 
-// Gets the device's current coordinates with a timeout.
+// Gets the device's current coordinates with high accuracy and fallback.
 export async function getCurrentCoords() {
-  const location = await Promise.race([
-    Location.getCurrentPositionAsync({
+  try {
+    const location = await Promise.race([
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("LOCATION_TIMEOUT")), 12000)
+      ),
+    ]);
+    return {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    };
+  } catch (err) {
+    try {
+      const last = await Location.getLastKnownPositionAsync();
+      if (last && last.coords) {
+        return {
+          latitude: last.coords.latitude,
+          longitude: last.coords.longitude,
+        };
+      }
+    } catch (_) {}
+
+    const fallback = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Balanced,
-    }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("LOCATION_TIMEOUT")), 20000)
-    ),
-  ]);
-  return {
-    latitude: location.coords.latitude,
-    longitude: location.coords.longitude,
-  };
+    });
+    return {
+      latitude: fallback.coords.latitude,
+      longitude: fallback.coords.longitude,
+    };
+  }
 }
 
 // Reverse-geocodes coordinates into a city + country using the device's

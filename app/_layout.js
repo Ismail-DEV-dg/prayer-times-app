@@ -1,7 +1,7 @@
 import React from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ThemeProvider, useAppTheme } from "../theme/ThemeContext";
+import { ThemeProvider, useTheme } from "../theme/ThemeContext";
 import { AppDataProvider } from "../utils/AppDataContext";
 import BootSplash from "../components/BootSplash";
 
@@ -14,7 +14,7 @@ export const unstable_settings = {
 };
 
 function AppShell() {
-  const { activeScheme, colors } = useAppTheme();
+  const { activeScheme, colors } = useTheme();
   return (
     <>
       <StatusBar style={activeScheme === "dark" ? "light" : "dark"} />

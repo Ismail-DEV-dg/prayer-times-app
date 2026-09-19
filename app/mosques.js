@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MapView, { Marker } from "react-native-maps";
 import { useRouter } from "expo-router";
-import { useAppTheme } from "../theme/ThemeContext";
+import { useTheme } from "../theme/ThemeContext";
 import { useAppData } from "../utils/AppDataContext";
 import { searchMosquesNear, buildRouteUrl } from "../services/mosquesApi";
 
@@ -27,7 +27,7 @@ import { searchMosquesNear, buildRouteUrl } from "../services/mosquesApi";
 // loading state. Missing mosques or a failed search never affects the
 // prayer schedule.
 export default function MosquesScreen() {
-  const { colors } = useAppTheme();
+  const { colors } = useTheme();
   const {
     currentLocation,
     locationStatus,

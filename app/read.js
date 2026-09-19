@@ -11,13 +11,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useAppTheme } from "../theme/ThemeContext";
+import { useTheme } from "../theme/ThemeContext";
 import { fetchSurahList } from "../services/quranApi";
 
 // Surah list for the READ mode. Text comes only from the verified
 // AlQuran Cloud API — on failure an honest error is shown.
 export default function ReadScreen() {
-  const { colors } = useAppTheme();
+  const { colors } = useTheme();
   const router = useRouter();
 
   const [surahs, setSurahs] = useState(null);

@@ -1,64 +1,27 @@
-import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Animated, Easing } from "react-native";
-import { useAppTheme } from "../theme/ThemeContext";
-import {
-  getNextPrayer,
-  getMsUntilPrayer,
-  formatCountdown,
-} from "../utils/time";
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, Image } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useTheme } from "../theme/ThemeContext";
+import { getNextPrayer, getMsUntilPrayer, formatCountdown } from "../utils/time";
 
-// Countdown to the next PRAYER (Sunrise is excluded upstream — the
-// caller passes prayers only). All math is done in the SELECTED CITY's
-// timezone, so GPS=Helsinki + selectedCity=Mecca counts down to Mecca's
-// next prayer at Mecca's clock time. Source-agnostic: works identically
-// for official (Muftiate) and calculated (AlAdhan) schedules.
-//
-// Subtle motion (native driver, no logic changes): a one-time entrance
-// fade/slide and a gentle pulsing "live" dot next to the label.
-// When the next prayer is tomorrow, a small "Завтра" badge appears.
+const PRAYER_NAMES = {
+  Fajr: "Фаджр",
+  Sunrise: "Восход",
+  Dhuhr: "Зухр",
+  Asr: "Аср",
+  Maghrib: "Магриб",
+  Isha: "Иша",
+};
+
+// Hero Next Prayer card matching the Settings mockup style
 export default function NextPrayer({ prayers, timezone }) {
-  const { colors } = useAppTheme();
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  const entrance = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0.4)).current;
+  const { colors } = useTheme();
+  const [, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-
-  // One-time entrance: fade in + slide up. Runs on mount only.
-  useEffect(() => {
-    Animated.timing(entrance, {
-      toValue: 1,
-      duration: 320,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [entrance]);
-
-  // Gentle "live" pulse for the dot (looping, native-driver opacity).
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0.3,
-          duration: 900,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
 
   if (!prayers || prayers.length === 0) return null;
 
@@ -66,90 +29,134 @@ export default function NextPrayer({ prayers, timezone }) {
   if (!next) return null;
 
   const msLeft = getMsUntilPrayer(next.time, timezone, next.tomorrow);
+  const isSoon = msLeft > 0 && msLeft <= 15 * 60 * 1000;
+  const prayerDisplayName = PRAYER_NAMES[next.name] || next.name;
 
   return (
-    <Animated.View
+    <View
       style={[
-        styles.card,
-        { backgroundColor: colors.accent },
+        styles.container,
         {
-          opacity: entrance,
-          transform: [
-            {
-              translateY: entrance.interpolate({
-                inputRange: [0, 1],
-                outputRange: [14, 0],
-              }),
-            },
-          ],
+          backgroundColor: colors.heroCardBg || colors.card,
+          borderColor: colors.border,
         },
       ]}
     >
-      <View style={styles.glow} />
-      <View style={styles.labelRow}>
-        <Animated.View
-          style={[
-            styles.dot,
-            { backgroundColor: colors.textOnActive, opacity: pulse },
-          ]}
+      {/* Left: Official App Avatar Emblem Badge */}
+      <View
+        style={[
+          styles.emblemCircle,
+          {
+            backgroundColor: colors.badgeBg || "rgba(255,255,255,0.1)",
+            borderColor: colors.badgeBorder || colors.accent,
+          },
+        ]}
+      >
+        <Image
+          source={require("../assets/icon.png")}
+          style={styles.emblemImage}
+          resizeMode="cover"
         />
-        <Text style={[styles.label, { color: colors.textOnActive }]}>
-          Следующий намаз
-        </Text>
-        {next.tomorrow ? (
-          <View style={[styles.tomorrowBadge, { backgroundColor: "rgba(255,255,255,0.18)" }]}>
-            <Text style={[styles.tomorrowText, { color: colors.textOnActive }]}>Завтра</Text>
+      </View>
+
+      {/* Right: Next Prayer Info & Countdown */}
+      <View style={styles.contentCol}>
+        <View style={styles.headerRow}>
+          <Text style={[styles.prayerName, { color: colors.text }]}>
+            {prayerDisplayName}
+          </Text>
+
+          <View
+            style={[
+              styles.pillBadge,
+              {
+                backgroundColor: isSoon
+                  ? colors.accentSoft
+                  : colors.badgeBg || colors.cardSecondary,
+                borderColor: isSoon ? colors.accent : colors.border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.pillText,
+                { color: isSoon ? colors.accent : colors.textSecondary },
+              ]}
+            >
+              {isSoon ? "СКОРО" : formatCountdown(msLeft)}
+            </Text>
           </View>
-        ) : null}
+        </View>
+
+        <Text style={[styles.prayerTime, { color: colors.text }]}>{next.time}</Text>
       </View>
-      <Text style={[styles.name, { color: colors.textOnActive }]}>{next.name}</Text>
-      <Text style={[styles.time, { color: colors.textOnActive }]}>{next.time}</Text>
-      <View style={styles.countdownRow}>
-        <Text style={[styles.countdownPrefix, { color: colors.textOnActive }]}>через </Text>
-        <Text style={[styles.countdown, { color: colors.textOnActive }]}>
-          {formatCountdown(msLeft)}
-        </Text>
-      </View>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 22,
-    padding: 22,
-    marginVertical: 16,
-    overflow: "hidden",
-    // soft depth under the hero card
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginVertical: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  // subtle top-right light glint inside the hero card (pure decoration)
-  glow: {
-    position: "absolute",
-    top: -40,
-    right: -30,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: "rgba(255,255,255,0.10)",
+  emblemCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+    overflow: "hidden",
   },
-  labelRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  label: { fontSize: 13, opacity: 0.85, fontWeight: "600" },
-  tomorrowBadge: {
+  emblemImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 25,
+  },
+  contentCol: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  prayerName: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  prayerTime: {
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    fontVariant: ["tabular-nums"],
+    marginTop: 2,
+  },
+  pillBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    marginLeft: 4,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  tomorrowText: { fontSize: 11, fontWeight: "700", opacity: 0.9 },
-  name: { fontSize: 22, fontWeight: "700" },
-  time: { fontSize: 36, fontWeight: "800", marginVertical: 2 },
-  countdownRow: { flexDirection: "row", alignItems: "baseline", marginTop: 2 },
-  countdownPrefix: { fontSize: 13, opacity: 0.75 },
-  countdown: { fontSize: 15, opacity: 0.9, fontVariant: ["tabular-nums"], fontWeight: "600" },
+  pillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: 0.5,
+  },
 });

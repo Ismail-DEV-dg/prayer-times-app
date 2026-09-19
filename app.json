@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Prayer Times",
+    "name": "Намаз",
     "slug": "prayer-times-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0F172A"
+      "backgroundColor": "#050c17"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -27,7 +27,7 @@
       "package": "com.prayertimes.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F172A"
+        "backgroundColor": "#050c17"
       },
       "permissions": [
         "ACCESS_COARSE_LOCATION",
