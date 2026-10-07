@@ -4,6 +4,7 @@ import {
   isLocationServicesEnabled,
   getCurrentCoords,
   reverseGeocode,
+  getIpLocation,
 } from "../services/locationApi";
 import { fetchPrayerTimes, methodName } from "../services/prayerApi";
 import { searchMosquesNear } from "../services/mosquesApi";
@@ -140,42 +141,72 @@ export function AppDataProvider({ children }) {
 
   const locateUser = useCallback(async () => {
     setLocationStatus("locating");
+    let located = null;
+
+    const tryIpFallback = async () => {
+      const ipGeo = await getIpLocation();
+      if (ipGeo) {
+        return normalizeCity({
+          latitude: ipGeo.latitude,
+          longitude: ipGeo.longitude,
+          name: ipGeo.city || "Ваше местоположение (IP)",
+          country: ipGeo.country || "",
+          region: ipGeo.region,
+          timezone: ipGeo.timezone,
+          fromGps: true,
+        });
+      }
+      return null;
+    };
+
     try {
       const servicesEnabled = await isLocationServicesEnabled();
       if (!servicesEnabled) {
-        setLocationStatus("disabled");
-        return null;
+        located = await tryIpFallback();
+        if (!located) {
+          if (mountedRef.current) setLocationStatus("disabled");
+          return null;
+        }
+      } else {
+        const granted = await requestLocationPermission();
+        if (!granted) {
+          located = await tryIpFallback();
+          if (!located) {
+            if (mountedRef.current) setLocationStatus("denied");
+            return null;
+          }
+        } else {
+          try {
+            const coords = await getCurrentCoords();
+            let geo = { city: null, country: null, region: null, timezone: null };
+            try {
+              geo = await reverseGeocode(coords.latitude, coords.longitude);
+            } catch (_) {}
+            located = normalizeCity({
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              name: geo.city || "Ваше местоположение",
+              country: geo.country || "",
+              region: geo.region,
+              timezone: geo.timezone,
+              fromGps: true,
+            });
+          } catch (e) {
+            // GPS failed, try IP fallback
+            located = await tryIpFallback();
+          }
+        }
       }
-    } catch (_) {}
-
-    const granted = await requestLocationPermission();
-    if (!granted) {
-      setLocationStatus("denied");
-      return null;
-    }
-    try {
-      const coords = await getCurrentCoords();
-      let geo = { city: null, country: null, region: null, timezone: null };
-      try {
-        geo = await reverseGeocode(coords.latitude, coords.longitude);
-      } catch (_) {
-        // Geocoding error should not prevent saving accurate GPS coordinates
-      }
-      const located = {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        name: geo.city || "Ваше местоположение",
-        country: geo.country || "",
-        region: geo.region,
-        timezone: geo.timezone,
-        fromGps: true,
-      };
-      const normalized = normalizeCity(located);
-      if (!mountedRef.current) return null;
-      setCurrentLocation(normalized);
-      setLocationStatus("ready");
-      return normalized;
     } catch (e) {
+      located = await tryIpFallback();
+    }
+
+    if (located) {
+      if (!mountedRef.current) return null;
+      setCurrentLocation(located);
+      setLocationStatus("ready");
+      return located;
+    } else {
       if (!mountedRef.current) return null;
       setLocationStatus("error");
       return null;
@@ -351,46 +382,11 @@ export function AppDataProvider({ children }) {
           // No saved selection: run the GPS flow once. On denial or any
           // failure the user lands on "choose a city" — never blocked.
           if (mountedRef.current) setStatus("loading");
-          const granted = await requestLocationPermission();
-          if (!granted) {
+          const located = await locateUser();
+          if (located) {
+            await selectCityFromGps(located);
+          } else {
             if (mountedRef.current) setStatus("need-city");
-            return;
-          }
-          try {
-            const coords = await getCurrentCoords();
-            const geo = await reverseGeocode(coords.latitude, coords.longitude);
-            const located = normalizeCity({
-              latitude: coords.latitude,
-              longitude: coords.longitude,
-              name: geo?.city || "Ваше местоположение",
-              country: geo?.country || "",
-              region: geo?.region,
-              timezone: geo?.timezone,
-              fromGps: true,
-            });
-            if (located) {
-              if (mountedRef.current) {
-                setCurrentLocation(located);
-                setLocationStatus("ready");
-                setSelectedCity(located);
-              }
-              await saveSelectedCity(located);
-              await addSavedCity(located);
-              const { defaultMethodForCountry } = require("../services/prayerApi");
-              const m = defaultMethodForCountry(located.country);
-              if (mountedRef.current) setCalcMethodState(m);
-              await loadPrayerTimes(located, null);
-            } else {
-              if (mountedRef.current) {
-                setLocationStatus("error");
-                setStatus("need-city");
-              }
-            }
-          } catch (e) {
-            if (mountedRef.current) {
-              setLocationStatus("error");
-              setStatus("need-city");
-            }
           }
         }
       } catch (outerErr) {

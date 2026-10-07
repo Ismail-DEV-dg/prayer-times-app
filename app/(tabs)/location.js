@@ -80,8 +80,6 @@ export default function LocationScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => {
-            // Row collapses smoothly; neighbors glide up (native anim).
-            LayoutAnimation.configureNext(LIST_ANIM);
             deleteSavedCity(item);
           }}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

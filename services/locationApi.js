@@ -110,3 +110,31 @@ export async function reverseGeocode(latitude, longitude) {
     return { city: null, country: null, region: null, timezone: null };
   }
 }
+
+// Fallback: IP-based geolocation when GPS is denied, disabled, or fails.
+// Uses geojs.io (free, no key, no limits, returns lat/lon/city/country).
+export async function getIpLocation() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch("https://get.geojs.io/v1/ip/geo.json", {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data && data.latitude && data.longitude) {
+      return {
+        latitude: Number(data.latitude),
+        longitude: Number(data.longitude),
+        city: data.city || null,
+        country: data.country || null,
+        region: data.region || null,
+        timezone: data.timezone || null,
+      };
+    }
+  } catch (e) {
+    // Network error or timeout
+  }
+  return null;
+}

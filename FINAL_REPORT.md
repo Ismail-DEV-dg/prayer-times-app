@@ -1442,3 +1442,9 @@ Production bundle (Hermes): собран успешно, 3.2 MB — конфиг
 8. Логические/интеграционные тесты исполнялись под Node (модули написаны без нативных импортов в чистой логике); поведение на устройстве проверено сборкой (bundle OK) и соответствует Expo SDK 54 / RN 0.81 API.
 9. (Итерация 3) Audio-тесты T1–T10 — симуляция логики hook в Node (mock expo-av, mock React-hooks), НЕ прогон на реальном устройстве: в окружении сборки нет устройства/эмулятора. Expo-av поведение на нативе не проверялось; bundle подтверждает компилируемость и целостность модульного графа. При первом прогоне харнесса найден реальный баг (T6: post-unmount PRIMARY успех уходил в continue и пробовал FALLBACK) — исправлен в `hooks/useAyahAudio.js`, повторный прогон 10/10.
 10. (Итерация 3) Один 502 islamic.network на Minshawi (проверка curl) — внешняя нестабильность CDN, причина по которой он FALLBACK, не PRIMARY.
+
+ # # #   I t e r a t i o n   1 1   ( B u g f i x :   E A S   S t a n d a l o n e   A P K   C r a s h e s   &   G e o l o c a t i o n ) 
+ -   * * F i x * * :   R e m o v e d   \ L a y o u t A n i m a t i o n \   f r o m   c i t y   d e l e t i o n   t o   p r e v e n t   A n d r o i d   n a t i v e   c r a s h e s   i n   E A S   b u i l d s . 
+ -   * * F i x * * :   R e - a r c h i t e c t e d   g e o l o c a t i o n   i n   \ l o c a t e U s e r \   t o   u s e   a   r o b u s t   I P - b a s e d   f a l l b a c k   ( \ g e t . g e o j s . i o \ )   w h e n   G P S   p e r m i s s i o n s   a r e   d e n i e d   o r   n a t i v e   \ G e o c o d e r \ / \ F u s e d L o c a t i o n P r o v i d e r \   f a i l s   i n   t h e   A P K   w i t h o u t   G M S / G o o g l e   A P I   k e y s . 
+ -   * * V e r i f i c a t i o n * * :   T e s t s   p a s s ,   d u p l i c a t e   G P S   l o g i c   r e m o v e d   f r o m   s t a r t u p   f l o w .  
+ 
