@@ -91,8 +91,30 @@ export function AppDataProvider({ children }) {
     const asNum = Number(method);
     const manual = method != null && Number.isFinite(asNum) ? asNum : null;
     const cacheKey = manual != null ? String(manual) : "auto";
-    if (showLoading) setStatus("loading");
+    
+    // 1. Instantly try to load the cache to avoid blocking the UI
+    const cached = await getPrayerCache(city, cacheKey);
+    let hasShownCache = false;
+    
+    if (cached && cached.payload && cached.payload.prayers) {
+      const fresh = isCacheFresh(cached, city.timezone);
+      setPrayerData({
+        ...cached.payload,
+        fromCache: !fresh,
+        cachedAt: cached.cachedAt,
+      });
+      setStatus(fresh ? "ready" : "offline-cache"); // show it immediately
+      hasShownCache = true;
+      
+      // If it's completely fresh (same day, <24h), we don't even need the network!
+      if (fresh) return;
+    }
+
+    if (showLoading && !hasShownCache) {
+      setStatus("loading");
+    }
     setErrorMessage(null);
+
     try {
       const data = await fetchPrayerTimes({
         latitude: city.latitude,

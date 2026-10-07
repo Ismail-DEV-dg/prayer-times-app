@@ -107,7 +107,7 @@ export function methodName(id) {
 // Six rows for the main screen: 5 prayers + Sunrise (not a prayer).
 const PRAYER_KEYS = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
 
-async function fetchWithTimeout(url, ms = 15000) {
+async function fetchWithTimeout(url, ms = 4000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
@@ -214,7 +214,7 @@ async function fetchFromOfficial(entry, { latitude, longitude, timezone }) {
     const dayIndex = dagestanDayIndex(timezone);
     if (dayIndex == null) return null;
     const url = `${source.endpoint}${resolved.slug}.json`;
-    const response = await fetchWithTimeout(url, 15000);
+    const response = await fetchWithTimeout(url, 4000);
     if (!response.ok) throw new Error("API_ERROR");
     const year = await response.json();
     if (!Array.isArray(year) || year.length !== 365) throw new Error("API_ERROR");
@@ -265,7 +265,7 @@ async function fetchFromOfficial(entry, { latitude, longitude, timezone }) {
     const wanted = `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`;
 
     const url = `${source.endpoint}${resolved.slug}.csv`;
-    const response = await fetchWithTimeout(url, 15000);
+    const response = await fetchWithTimeout(url, 4000);
     if (!response.ok) throw new Error("API_ERROR");
     const text = await response.text();
     if (!text || text.length < 200) throw new Error("API_ERROR");

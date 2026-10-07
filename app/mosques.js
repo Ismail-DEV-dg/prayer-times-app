@@ -10,35 +10,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import MapView, { Marker } from "react-native-maps";
 import { useRouter } from "expo-router";
 import { useTheme } from "../theme/ThemeContext";
 import { useAppData } from "../utils/AppDataContext";
 import { searchMosquesNear, buildRouteUrl } from "../services/mosquesApi";
-
-// Guard against MapView native crash in standalone APKs when Google Maps API key
-// or Google Play Services are missing. Keeps the list of mosques fully working!
-class MapErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error) {
-    console.log("[MosquesScreen] MapView error gracefully handled:", error?.message);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback;
-    }
-    return this.props.children;
-  }
-}
 
 // Mosque screen. Opened ONLY by the user pressing the "Мечети" button —
 // never automatically. The map and the list work EXCLUSIVELY from the
@@ -209,46 +184,15 @@ export default function MosquesScreen() {
     }
     return (
       <View style={{ flex: 1 }}>
-        <MapErrorBoundary
-          fallback={
-            <View style={[styles.mapFallback, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Ionicons name="map-outline" size={28} color={colors.accent} />
-              <Text style={[styles.mapFallbackTitle, { color: colors.text }]}>
-                Встроенная карта недоступна в этой сборке
-              </Text>
-              <Text style={[styles.mapFallbackSub, { color: colors.textSecondary }]}>
-                Список мечетей с расстоянием и навигацией работает в обычном режиме ниже.
-              </Text>
-            </View>
-          }
-        >
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: currentLocation.latitude,
-              longitude: currentLocation.longitude,
-              latitudeDelta: 0.08,
-              longitudeDelta: 0.08,
-            }}
-          >
-            <Marker
-              coordinate={{
-                latitude: currentLocation.latitude,
-                longitude: currentLocation.longitude,
-              }}
-              title="Вы здесь"
-              pinColor={colors.accent}
-            />
-            {(mosques || []).map((m) => (
-              <Marker
-                key={m.id}
-                coordinate={{ latitude: m.latitude, longitude: m.longitude }}
-                title={m.name || "Мечеть"}
-                description={m.address || m.distanceLabel}
-              />
-            ))}
-          </MapView>
-        </MapErrorBoundary>
+        <View style={[styles.mapFallback, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Ionicons name="map-outline" size={28} color={colors.accent} />
+          <Text style={[styles.mapFallbackTitle, { color: colors.text }]}>
+            Встроенная карта отключена
+          </Text>
+          <Text style={[styles.mapFallbackSub, { color: colors.textSecondary }]}>
+            Выберите мечеть из списка ниже, чтобы построить маршрут в вашем навигаторе.
+          </Text>
+        </View>
         <FlatList
           data={mosques || []}
           keyExtractor={(m) => m.id}
