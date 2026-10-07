@@ -1,40 +1,27 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Audio } from "expo-av";
+import { PRIMARY_AUDIO_TIMEOUT_MS, TOTAL_TIMEOUT_MS } from "../services/quranApi";
 
-// Single-ayah audio playback. ONE Sound instance exists at any moment:
+// Single-ayah audio playback for Read mode. ONE Sound instance exists at any moment:
 // pressing another ayah stops and unloads the previous one. Everything
 // is cleaned up on unmount.
 //
-// Lifecycle safety (6.3):
+// Lifecycle safety:
 // - mountedRef: once the owning screen unmounts, no load/playback is
 //   started and no state is written;
 // - playTokenRef: every play()/unload() bumps a generation counter;
 //   a createAsync() that resolves after a newer play()/unload() is
-//   stale — its Sound is unloaded immediately and never stored, so a
-//   slow PRIMARY load can never leak a playing sound.
+//   stale — its Sound is unloaded immediately and never stored.
 //
-// Fallback (6.4): play(url, key, fallbackUrl) tries the fallback URL
-// EXACTLY ONCE when (and only when) the primary load fails. A null/
-// undefined fallbackUrl is perfectly valid — PRIMARY alone. If both
-// fail, errorKey is set (existing error UI), with NO retry loop.
-// The fallback is fully optional: the hook never imports or requires
-// any specific fallback source.
-//
-// expo-av is the SDK 54 audio module (expo-audio is newer but
-// expo-av ~16.0.8 is the bundled, verified version for this SDK).
-//
-// Player extensions (Listen mode) — additive only, the original API
-// (play/stop/playingKey/loadingKey/errorKey/paused) is unchanged:
-// - setOnFinish(fn): optional callback invoked when the CURRENT sound
-//   finishes (didJustFinish). The player screen uses it to advance to
-//   the next ayah. The internal unload-on-finish behavior is preserved;
-// - getPosition(): playback position + duration of the current sound
-//   (for the progress bar), null when nothing is loaded;
-// - background playback: the audio mode keeps the sound active in the
-//   background (staysActiveInBackground: true on both platforms —
-//   iOS additionally needs UIBackgroundModes "audio" in app.json, which
-//   is configured there). Works through the SAME single-Sound
-//   architecture — no second audio system.
+// Fallback & Race:
+// - Primary API starts immediately.
+// - If Primary does not respond within PRIMARY_AUDIO_TIMEOUT_MS (2s), immediately
+//   starts the Fallback API.
+// - If Primary fails early, Fallback is started immediately without waiting 2s.
+// - Whichever returns first wins and plays; the other is unloaded immediately
+//   to prevent double playback.
+// - If both fail or TOTAL_TIMEOUT_MS (10s) expires, loading state is exited
+//   and errorKey is set.
 export function useAyahAudio() {
   const soundRef = useRef(null);
   const mountedRef = useRef(true);
@@ -58,6 +45,9 @@ export function useAyahAudio() {
     if (soundRef.current) {
       const sound = soundRef.current;
       soundRef.current = null;
+      try {
+        await sound.stopAsync();
+      } catch (e) {}
       try {
         await sound.unloadAsync();
       } catch (e) {
@@ -94,7 +84,7 @@ export function useAyahAudio() {
   }, []);
 
   // play(url, key, fallbackUrl = null) — loads and plays; guards
-  // against double-taps. fallbackUrl is optional and may be absent.
+  // against double-taps and concurrent playback.
   const play = useCallback(
     async (url, key, fallbackUrl = null) => {
       if (!mountedRef.current) return;
@@ -120,76 +110,155 @@ export function useAyahAudio() {
       if (!mountedRef.current) return;
       setLoadingKey(key);
 
-      const urls = typeof fallbackUrl === "string" && fallbackUrl ? [url, fallbackUrl] : [url];
+      const token = ++playTokenRef.current;
+      const startTime = Date.now();
 
-      let lastToken = -1;
-      for (let i = 0; i < urls.length; i++) {
-        const token = ++playTokenRef.current;
-        lastToken = token;
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (e) {
+        // audio mode configuration failure
+      }
+
+      if (!mountedRef.current || token !== playTokenRef.current) return;
+
+      const hasFallback = typeof fallbackUrl === "string" && Boolean(fallbackUrl);
+
+      let winnerFound = false;
+      let primaryFinished = false;
+      let fallbackFinished = false;
+      let primaryError = false;
+      let fallbackError = false;
+      let fallbackStarted = false;
+      let fallbackTimer = null;
+      let totalTimer = null;
+
+      const cleanupTimers = () => {
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        if (totalTimer) clearTimeout(totalTimer);
+      };
+
+      const handleWinner = async (sound, sourceName) => {
+        if (winnerFound || !mountedRef.current || token !== playTokenRef.current) {
+          // If already won or stale/unmounted, immediately stop and unload to prevent double play or leak
+          try {
+            await sound.stopAsync();
+            await sound.unloadAsync();
+          } catch (e) {}
+          return;
+        }
+
+        winnerFound = true;
+        cleanupTimers();
+        const duration = Date.now() - startTime;
+        console.log(`[QuranAudio] ${sourceName} API responded in ${duration}ms`);
+
+        soundRef.current = sound;
+        if (mountedRef.current && token === playTokenRef.current) {
+          setPlayingKey(key);
+          setPaused(false);
+          setLoadingKey(null);
+        }
+      };
+
+      const handleBothFailed = () => {
+        if (winnerFound || !mountedRef.current || token !== playTokenRef.current) return;
+        winnerFound = true;
+        cleanupTimers();
+        console.log(`[QuranAudio] Both audio sources failed in ${Date.now() - startTime}ms`);
+        soundRef.current = null;
+        if (mountedRef.current && token === playTokenRef.current) {
+          setPlayingKey(null);
+          setLoadingKey(null);
+          setErrorKey(key);
+        }
+      };
+
+      const handleFailure = (sourceName) => {
+        if (sourceName === "Primary") {
+          primaryFinished = true;
+          primaryError = true;
+        } else {
+          fallbackFinished = true;
+          fallbackError = true;
+        }
+
+        if (winnerFound || !mountedRef.current || token !== playTokenRef.current) {
+          return;
+        }
+
+        if (sourceName === "Primary") {
+          // If primary failed before fallback started, trigger fallback immediately
+          if (!fallbackStarted && hasFallback) {
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            startFallback();
+          } else if (!hasFallback || fallbackFinished) {
+            handleBothFailed();
+          }
+        } else {
+          // Fallback failed
+          if (primaryFinished && primaryError) {
+            handleBothFailed();
+          }
+        }
+      };
+
+      const loadSound = async (targetUrl, sourceName) => {
+        if (!targetUrl || typeof targetUrl !== "string") {
+          handleFailure(sourceName);
+          return;
+        }
+
         try {
-          await Audio.setAudioModeAsync({
-            allowsRecordingIOS: false,
-            playsInSilentModeIOS: true,
-            // Background playback (Listen mode): keep the sound active
-            // when the app is backgrounded / the screen is off. iOS also
-            // needs UIBackgroundModes: ["audio"] (app.json); Android
-            // holds a partial wake lock while a Sound is playing.
-            staysActiveInBackground: true,
-            shouldDuckAndroid: true,
-            playThroughEarpieceAndroid: false,
-          });
           const { sound } = await Audio.Sound.createAsync(
-            { uri: urls[i] },
+            { uri: targetUrl },
             { shouldPlay: true },
             (status) => {
               if (status.isLoaded && status.didJustFinish) {
                 // only the CURRENT sound may react to its own finish
                 if (soundRef.current === sound) {
                   unload();
-                  // Notify the player (auto-advance). Called AFTER the
-                  // internal unload so the player sees a clean state.
                   if (onFinishRef.current) onFinishRef.current(key);
                 }
               }
             }
           );
-          if (!mountedRef.current || token !== playTokenRef.current) {
-            // unmounted, or superseded by a newer play()/unload():
-            // release immediately, store nothing. If unmounted, stop
-            // entirely — no fallback, no state writes; if merely
-            // superseded, a newer play() owns the loop now.
-            try {
-              await sound.unloadAsync();
-            } catch (e) {
-              // already unloaded
-            }
-            return;
-          }
-          soundRef.current = sound;
-          setPlayingKey(key);
-          setPaused(false);
-          setLoadingKey(null);
-          return; // PRIMARY (or fallback) loaded — done
+          await handleWinner(sound, sourceName);
         } catch (e) {
-          if (!mountedRef.current) {
-            // unmounted mid-load: make sure nothing half-loaded leaks
-            playTokenRef.current++;
-            return;
-          }
-          if (token !== playTokenRef.current) {
-            return; // a newer action owns the player now
-          }
-          // try the next URL (the single fallback attempt), or fail
+          handleFailure(sourceName);
         }
+      };
+
+      const startFallback = () => {
+        if (fallbackStarted || winnerFound || !hasFallback) return;
+        fallbackStarted = true;
+        loadSound(fallbackUrl, "Fallback");
+      };
+
+      // 1. Start primary audio request immediately
+      loadSound(url, "Primary");
+
+      // 2. Fallback switch timer: if primary does not respond within 2s, switch to fallback
+      if (hasFallback) {
+        fallbackTimer = setTimeout(() => {
+          if (!winnerFound && !fallbackStarted && mountedRef.current && token === playTokenRef.current) {
+            startFallback();
+          }
+        }, PRIMARY_AUDIO_TIMEOUT_MS);
       }
 
-      // every candidate URL failed (or none was given)
-      if (mountedRef.current && lastToken === playTokenRef.current) {
-        soundRef.current = null;
-        setPlayingKey(null);
-        setLoadingKey(null);
-        setErrorKey(key);
-      }
+      // 3. Overall timeout: 10s
+      totalTimer = setTimeout(() => {
+        if (!winnerFound && mountedRef.current && token === playTokenRef.current) {
+          console.log(`[QuranAudio] Overall audio timeout (${TOTAL_TIMEOUT_MS}ms) reached`);
+          handleBothFailed();
+        }
+      }, TOTAL_TIMEOUT_MS);
     },
     [playingKey, paused, unload]
   );
@@ -202,6 +271,7 @@ export function useAyahAudio() {
       mountedRef.current = false;
       playTokenRef.current++;
       if (soundRef.current) {
+        soundRef.current.stopAsync().catch(() => {});
         soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }

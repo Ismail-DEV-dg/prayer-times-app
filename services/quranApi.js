@@ -1,27 +1,35 @@
-// Quran text + audio sources.
+// Quran text + audio sources for Read mode.
 //
-// Text: AlQuran Cloud API (https://alquran.cloud) — verified source
-// serving the standard Uthmani mushaf and published translations.
+// Strictly 2 APIs are used (all 3rd-party services like Quran.com are removed):
+// - In Russia (РФ):
+//     Text Primary:   https://alquran.api.alislam.ru/v1 (timeout 2s)
+//     Text Fallback:  https://api.alquran.cloud/v1
+//     Audio Primary:  https://cdn.alislam.ru/quran/audio/128/... (timeout 2s)
+//     Audio Fallback: https://cdn.islamic.network/quran/audio/128/... (AlQuran Cloud CDN)
+// - Outside Russia:
+//     Text Primary:   https://api.alquran.cloud/v1 (timeout 2s)
+//     Text Fallback:  https://alquran.api.alislam.ru/v1
+//     Audio Primary:  https://everyayah.com/data/... (timeout 2s)
+//     Audio Fallback: https://cdn.islamic.network/quran/audio/128/... (AlQuran Cloud CDN)
 //
-// Audio PRIMARY: everyayah.com per-ayah files (one mp3 per ayah,
-// zero-padded surah/ayah segments, 128 kbps). Verified folders:
-// Alafasy_128kbps / Husary_128kbps / Minshawy_Murattal_128kbps
-// (HTTP 200 on real ayahs; the underscore-less spellings 404).
-//
-// Audio FALLBACK (OPTIONAL): islamic.network CDN per-ayah files keyed
-// by the GLOBAL ayah number (1..6236). Measurably slower and has had
-// intermittent 502s, so it is used only when PRIMARY fails.
-// The app must work with the fallback removed entirely — the hook
-// treats a null/undefined fallback URL as "no fallback".
-//
-// NO text is ever generated locally. If the source is unreachable the
-// caller must show an error — fabricated ayahs are forbidden.
+// Race & Fallback rules:
+// - Primary API starts immediately. If no response within 2s (or early failure),
+//   Fallback API starts immediately.
+// - First successful response wins and cancels the other request via AbortController.
+// - Overall timeout is 10s.
+// - Listen mode is completely untouched.
 
-const API_BASE = "https://api.alquran.cloud/v1";
+export const PRIMARY_TEXT_TIMEOUT_MS = 2000;
+export const FALLBACK_1_TIMEOUT_MS = 2000;
+export const TOTAL_TIMEOUT_MS = 10000;
+export const PRIMARY_AUDIO_TIMEOUT_MS = 2000;
+
+const ALISLAM_API_BASE = "https://alquran.api.alislam.ru/v1";
+const ALQURAN_CLOUD_API_BASE = "https://api.alquran.cloud/v1";
 const ARABIC_EDITION = "quran-uthmani";
-const TRANSLATION_EDITION = "ru.kuliev"; // Elmir Kuliev translation
+const TRANSLATION_EDITION = "ru.kuliev"; // Elmir Kuliev Russian translation
 
-// Reciters verified on the CDN (HTTP 200 on sample ayahs).
+// Reciters verified on CDNs (HTTP 200 on sample ayahs).
 export const RECITERS = [
   { id: "ar.alafasy", name: "Мишари Рашид аль-Афаси" },
   { id: "ar.husary", name: "Махмуд Халиль аль-Хусари" },
@@ -30,29 +38,175 @@ export const RECITERS = [
 
 export const DEFAULT_RECITER = "ar.alafasy";
 
+const RECITER_FALLBACK_MAP = {
+  "ar.alafasy": { id: "ar.alafasy", bitrate: 128 },
+  "ar.husary": { id: "ar.husary", bitrate: 128 },
+  "ar.minshawi": { id: "ar.minshawi", bitrate: 128 },
+};
+
+export function normalizeReciterId(reciterId) {
+  if (!reciterId || typeof reciterId !== "string") return DEFAULT_RECITER;
+  const lower = reciterId.toLowerCase().trim();
+  if (lower.includes("husary")) return "ar.husary";
+  if (lower.includes("minshaw")) return "ar.minshawi";
+  if (lower.includes("afasy") || lower.includes("alafasy")) return "ar.alafasy";
+  return DEFAULT_RECITER;
+}
+
 export function isValidSurahNumber(n) {
   return Number.isInteger(Number(n)) && Number(n) >= 1 && Number(n) <= 114;
 }
 
-async function fetchWithTimeout(url, ms = 20000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
+// Determines if user is located in Russia based on selected city or device timezone
+export function isUserInRussia(city = null) {
+  if (city && city.country) {
+    return /russia|россия|российская|рф/i.test(city.country);
   }
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (
+      tz.startsWith("Europe/Moscow") ||
+      tz.startsWith("Europe/Samara") ||
+      tz.startsWith("Europe/Kaliningrad") ||
+      tz.startsWith("Europe/Volgograd") ||
+      tz.startsWith("Europe/Saratov") ||
+      tz.startsWith("Europe/Ulyanovsk") ||
+      tz.startsWith("Europe/Astrakhan") ||
+      tz.startsWith("Europe/Kirov") ||
+      tz.startsWith("Asia/Yekaterinburg") ||
+      tz.startsWith("Asia/Omsk") ||
+      tz.startsWith("Asia/Novosibirsk") ||
+      tz.startsWith("Asia/Barnaul") ||
+      tz.startsWith("Asia/Tomsk") ||
+      tz.startsWith("Asia/Novokuznetsk") ||
+      tz.startsWith("Asia/Krasnoyarsk") ||
+      tz.startsWith("Asia/Irkutsk") ||
+      tz.startsWith("Asia/Chita") ||
+      tz.startsWith("Asia/Yakutsk") ||
+      tz.startsWith("Asia/Khandyga") ||
+      tz.startsWith("Asia/Vladivostok") ||
+      tz.startsWith("Asia/Ust-Nera") ||
+      tz.startsWith("Asia/Magadan") ||
+      tz.startsWith("Asia/Sakhalin") ||
+      tz.startsWith("Asia/Srednekolymsk") ||
+      tz.startsWith("Asia/Kamchatka") ||
+      tz.startsWith("Asia/Anadyr")
+    ) {
+      return true;
+    }
+  } catch (e) {}
+  return false;
 }
 
-// Surah list (metadata only, ~5 KB).
-export async function fetchSurahList() {
-  const response = await fetchWithTimeout(`${API_BASE}/surah`);
+// Exactly 2 sources race helper:
+// 1. Starts primary source immediately.
+// 2. If primary does not respond within primary timeout (2s) or fails early, starts fallback.
+// 3. Whichever succeeds first wins and cancels the other in-flight request using AbortController.
+// 4. Overall timeout (10s) protects against hanging requests.
+function fetchWithFallback({ primary, fallback, totalTimeoutMs = TOTAL_TIMEOUT_MS, label = "QuranText" }) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let fallbackStarted = false;
+    const primaryController = new AbortController();
+    const fallbackController = new AbortController();
+    let primaryTimer = null;
+    let totalTimer = null;
+    const startTime = Date.now();
+
+    function cleanup() {
+      if (primaryTimer) clearTimeout(primaryTimer);
+      if (totalTimer) clearTimeout(totalTimer);
+    }
+
+    function handleSuccess(data, sourceName, winnerController, loserController) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      loserController.abort();
+      const duration = Date.now() - startTime;
+      console.log(`[${label}] ${sourceName} API responded in ${duration}ms`);
+      resolve(data);
+    }
+
+    let primaryFinished = false;
+    let primaryError = null;
+    let fallbackFinished = false;
+    let fallbackError = null;
+
+    function checkBothFailed() {
+      if (settled) return;
+      if (primaryFinished && fallbackFinished) {
+        settled = true;
+        cleanup();
+        console.log(`[${label}] Both sources failed in ${Date.now() - startTime}ms`);
+        reject(primaryError || fallbackError || new Error("API_ERROR"));
+      }
+    }
+
+    function startFallback() {
+      if (settled || fallbackStarted) return;
+      fallbackStarted = true;
+      fallback.fn(fallbackController.signal)
+        .then((data) => {
+          fallbackFinished = true;
+          handleSuccess(data, fallback.name, fallbackController, primaryController);
+        })
+        .catch((err) => {
+          fallbackFinished = true;
+          fallbackError = err;
+          checkBothFailed();
+        });
+    }
+
+    // 1. Start primary immediately
+    primary.fn(primaryController.signal)
+      .then((data) => {
+        primaryFinished = true;
+        handleSuccess(data, primary.name, primaryController, fallbackController);
+      })
+      .catch((err) => {
+        primaryFinished = true;
+        primaryError = err;
+        if (!settled) {
+          if (!fallbackStarted) {
+            startFallback();
+          } else {
+            checkBothFailed();
+          }
+        }
+      });
+
+    // 2. Primary timeout (2s): if no response within timeout, immediately trigger fallback
+    primaryTimer = setTimeout(() => {
+      if (!settled && !fallbackStarted) {
+        console.log(`[${label}] ${primary.name} did not respond within ${primary.timeoutMs}ms, triggering fallback`);
+        startFallback();
+      }
+    }, primary.timeoutMs);
+
+    // 3. Overall timeout (10s)
+    totalTimer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        primaryController.abort();
+        fallbackController.abort();
+        console.log(`[${label}] Overall timeout of ${totalTimeoutMs}ms reached`);
+        reject(new Error("NETWORK_ERROR"));
+      }
+    }, totalTimeoutMs);
+  });
+}
+
+// Fetch Surah list from AlQuran Cloud or AlIslam mirror
+async function fetchSurahListFromBase(apiBase, signal) {
+  const response = await fetch(`${apiBase}/surah`, { signal });
   if (!response.ok) throw new Error("API_ERROR");
   const json = await response.json();
   if (json.code !== 200 || !Array.isArray(json.data)) throw new Error("API_ERROR");
   return json.data.map((s) => ({
     number: s.number,
-    name: s.name, // Arabic name
+    name: s.name,
     englishName: s.englishName,
     englishNameTranslation: s.englishNameTranslation,
     numberOfAyahs: s.numberOfAyahs,
@@ -60,14 +214,10 @@ export async function fetchSurahList() {
   }));
 }
 
-// One surah with Arabic text + translation, combined per ayah.
-// Uses a single request with two editions to keep ayah numbering exact.
-export async function fetchSurah(surahNumber) {
-  const num = Number(surahNumber);
-  if (!isValidSurahNumber(num)) throw new Error("INVALID_SURAH");
-
-  const url = `${API_BASE}/surah/${num}/editions/${ARABIC_EDITION},${TRANSLATION_EDITION}`;
-  const response = await fetchWithTimeout(url, 30000);
+// Fetch single Surah with Arabic text and Russian translation from AlQuran Cloud or AlIslam mirror
+async function fetchSurahFromBase(apiBase, num, signal) {
+  const url = `${apiBase}/surah/${num}/editions/${ARABIC_EDITION},${TRANSLATION_EDITION}`;
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error("API_ERROR");
   const json = await response.json();
   if (json.code !== 200 || !Array.isArray(json.data) || json.data.length < 2) {
@@ -85,8 +235,8 @@ export async function fetchSurah(surahNumber) {
     const t = translation.ayahs[i];
     if (t.numberInSurah !== a.numberInSurah) throw new Error("API_ERROR");
     return {
-      numberInSurah: a.numberInSurah, // exact ayah number within the surah
-      globalNumber: a.number, // global ayah number 1..6236 (audio key)
+      numberInSurah: a.numberInSurah,
+      globalNumber: a.number,
       arabic: a.text,
       translation: t.text || "",
       page: a.page || null,
@@ -103,19 +253,60 @@ export async function fetchSurah(surahNumber) {
   };
 }
 
-// PRIMARY per-ayah audio URL (everyayah.com). Zero-padded
-// surah/ayah segments guarantee that pressing "Ayah 75" plays
-// exactly Surah X / Ayah 75.
-export function getAyahAudioUrl(surahNumber, ayahNumber, reciterId = DEFAULT_RECITER) {
+// Surah list (metadata only, ~5 KB).
+export async function fetchSurahList(city = null) {
+  const inRF = isUserInRussia(city);
+  const primary = inRF
+    ? { name: "Primary (AlIslam)", fn: (sig) => fetchSurahListFromBase(ALISLAM_API_BASE, sig), timeoutMs: PRIMARY_TEXT_TIMEOUT_MS }
+    : { name: "Primary (AlQuranCloud)", fn: (sig) => fetchSurahListFromBase(ALQURAN_CLOUD_API_BASE, sig), timeoutMs: PRIMARY_TEXT_TIMEOUT_MS };
+
+  const fallback = inRF
+    ? { name: "Fallback (AlQuranCloud)", fn: (sig) => fetchSurahListFromBase(ALQURAN_CLOUD_API_BASE, sig) }
+    : { name: "Fallback (AlIslam)", fn: (sig) => fetchSurahListFromBase(ALISLAM_API_BASE, sig) };
+
+  return fetchWithFallback({ primary, fallback, label: "QuranSurahList" });
+}
+
+// One surah with Arabic text + translation, combined per ayah.
+export async function fetchSurah(surahNumber, city = null) {
+  const num = Number(surahNumber);
+  if (!isValidSurahNumber(num)) throw new Error("INVALID_SURAH");
+
+  const inRF = isUserInRussia(city);
+  const primary = inRF
+    ? { name: "Primary (AlIslam)", fn: (sig) => fetchSurahFromBase(ALISLAM_API_BASE, num, sig), timeoutMs: PRIMARY_TEXT_TIMEOUT_MS }
+    : { name: "Primary (AlQuranCloud)", fn: (sig) => fetchSurahFromBase(ALQURAN_CLOUD_API_BASE, num, sig), timeoutMs: PRIMARY_TEXT_TIMEOUT_MS };
+
+  const fallback = inRF
+    ? { name: "Fallback (AlQuranCloud)", fn: (sig) => fetchSurahFromBase(ALQURAN_CLOUD_API_BASE, num, sig) }
+    : { name: "Fallback (AlIslam)", fn: (sig) => fetchSurahFromBase(ALISLAM_API_BASE, num, sig) };
+
+  return fetchWithFallback({ primary, fallback, label: "QuranSurah" });
+}
+
+// PRIMARY per-ayah audio URL:
+// - For Russia: alislam.ru audio CDN (https://cdn.alislam.ru/quran/audio/128/...)
+// - Outside Russia: everyayah.com (https://everyayah.com/data/...)
+export function getAyahAudioUrl(surahNumber, ayahNumber, reciterId = DEFAULT_RECITER, globalAyahNumber = null, city = null) {
+  const inRF = isUserInRussia(city);
+  const rec = normalizeReciterId(reciterId);
+  const num = Number(globalAyahNumber);
+
+  // In Russia: use cdn.alislam.ru if globalAyahNumber is present
+  if (inRF && Number.isInteger(num) && num >= 1 && num <= 6236) {
+    const config = RECITER_FALLBACK_MAP[rec] || { id: "ar.alafasy", bitrate: 128 };
+    return `https://cdn.alislam.ru/quran/audio/${config.bitrate}/${config.id}/${num}.mp3`;
+  }
+
+  // Outside Russia (or fallback when globalAyahNumber is not provided): everyayah.com
   const folder =
-    reciterId === "ar.alafasy"
+    rec === "ar.alafasy"
       ? "Alafasy_128kbps"
-      : reciterId === "ar.husary"
+      : rec === "ar.husary"
       ? "Husary_128kbps"
-      : reciterId === "ar.minshawi"
+      : rec === "ar.minshawi"
       ? "Minshawy_Murattal_128kbps"
-      : null;
-  if (folder == null) return null;
+      : "Alafasy_128kbps";
   const s = Number(surahNumber);
   const a = Number(ayahNumber);
   if (!Number.isInteger(s) || s < 1 || s > 114) return null;
@@ -123,12 +314,12 @@ export function getAyahAudioUrl(surahNumber, ayahNumber, reciterId = DEFAULT_REC
   return `https://everyayah.com/data/${folder}/${String(s).padStart(3, "0")}${String(a).padStart(3, "0")}.mp3`;
 }
 
-// OPTIONAL FALLBACK per-ayah audio URL (islamic.network CDN), keyed
-// by the global ayah number (1..6236). Returned as a plain string;
-// callers may pass it (or null) to the audio hook. Removing this
-// function and its call site must not affect PRIMARY playback.
+// FALLBACK per-ayah audio URL (AlQuran Cloud / islamic.network CDN):
+// Keyed by global ayah number (1..6236) at 128 kbps.
 export function getAyahAudioUrlFallback(globalAyahNumber, reciterId = DEFAULT_RECITER) {
   const num = Number(globalAyahNumber);
   if (!Number.isInteger(num) || num < 1 || num > 6236) return null;
-  return `https://cdn.islamic.network/quran/audio/64/${reciterId}/${num}.mp3`;
+  const rec = normalizeReciterId(reciterId);
+  const config = RECITER_FALLBACK_MAP[rec] || { id: "ar.alafasy", bitrate: 128 };
+  return `https://cdn.islamic.network/quran/audio/${config.bitrate}/${config.id}/${num}.mp3`;
 }

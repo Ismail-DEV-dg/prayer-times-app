@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -12,33 +12,49 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "../theme/ThemeContext";
+import { useAppData } from "../utils/AppDataContext";
 import { fetchSurahList } from "../services/quranApi";
 
-// Surah list for the READ mode. Text comes only from the verified
-// AlQuran Cloud API — on failure an honest error is shown.
+// Surah list for the READ mode. Text comes from verified sources (primary + fallback).
+// On failure an honest error is shown.
 export default function ReadScreen() {
   const { colors } = useTheme();
+  const { selectedCity } = useAppData();
   const router = useRouter();
 
+  const mountedRef = useRef(true);
   const [surahs, setSurahs] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchSurahList();
-      setSurahs(list);
+      const list = await fetchSurahList(selectedCity);
+      if (mountedRef.current) {
+        setSurahs(list);
+      }
     } catch (e) {
-      setError(
-        e.message === "NETWORK_ERROR"
-          ? "Нет подключения к интернету. Не удалось загрузить список сур."
-          : "Не удалось загрузить Коран."
-      );
+      if (mountedRef.current) {
+        setError(
+          e.message === "NETWORK_ERROR"
+            ? "Нет подключения к интернету. Не удалось загрузить список сур."
+            : "Не удалось загрузить Коран."
+        );
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 

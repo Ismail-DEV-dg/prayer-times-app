@@ -1,31 +1,63 @@
 # FINAL REPORT — Prayer Times App
 
-Дата: 2026-09-14 (обновлено: итерация 9 — FULL-SURAH Listen mode)
+Дата: 2026-10-07 (обновлено: итерация 10 — Read mode API fallbacks & EAS APK crash prevention)
 Проект: React Native / Expo приложение для времени намаза.
-База: существующий работающий проект на Expo SDK 54 (APK ранее собирался).
+База: существующий работающий проект на Expo SDK 54 (APK собирается через EAS).
 
 > **Восстановление контекста в новом чате**: этот файл — актуальное состояние
-> проекта. Итерация 9 (последняя) описана в §0.10: режим «Слушать» переделан
-> с ayah-by-ayah на НАСТОЯЩИЙ full-surah player — одна сура = один
-> непрерывный аудиотрек = один Sound (Аль-Кахф показывает 00:00 / ~61:47,
-> а не 5 секунд аята); PRIMARY = mp3quran.net (60 известных чтецов, у
-> каждого ВСЕ 114 сур, `{server}/NNN.mp3`, HTTP Range 206 = seek, без
-> API-ключа; 360/360 живых HTTP-проверок), FALLBACK =
-> download.quranicaudio.com (31 same-human полный путь, все проверены);
-> новый хук useSurahAudio с той же защитой lifecycle (mountedRef/
-> playTokenRef, максимум один Sound); Previous/Next = суры; didJustFinish =
-> авто-переход к следующей суре; сохранение позиции = {surah, ms} (seek
-> внутри трека, никаких выдуманных таймингов аятов); picker с RU/EN-поиском
-> по 60 чтецам; background playback (staysActiveInBackground, WAKE_LOCK,
-> UIBackgroundModes audio). Режим «Читать» (3 чтеца EveryAyah,
-> hooks/useAyahAudio.js, app/surah/[number].js) НЕ тронут. Тесты: unit 46/46
-> (14 новых listen-тестов), surah-audio smoke 12/12 (lifecycle/race/
-> finish/fallback/unmount), registry live-check 44/44 (включая реальные
-> длительности: Аль-Кахф 33 мин, Аль-Бакъара 126 мин), source-system 23/23,
-> android bundle 3.32 MB. Device-тест APK — за пользователем (п.27/§0.10).
+> проекта. Итерация 10 (последняя) описана в §0.11: режим «Читать» переведён
+> строго на 2 API (AlIslam.ru и AlQuran Cloud) с таймаутом 2с на Primary;
+> устранены вылеты в сборке EAS APK (MapErrorBoundary вокруг MapView,
+> каскадный опрос геопозиции без зависаний, GlobalErrorBoundary в корне приложения,
+> newArchEnabled: false). Режим «Слушать» (full-surah player) НЕ тронут.
+> Тесты: 60/60 PASS (`npm test`). Итерация 9 (§0.10): full-surah player.
 > Итерация 8 (§0.9): Qibla production-lag FIX. Итерация 7 (§0.8): ДУМ РТ.
 > Итерация 6 (§0.7): редизайн Киблы. Итерация 5e (§0.6e): FIX навигации.
-> Expo SDK 54 / RN 0.81.5 / зависимости — НЕ менялись.
+> Expo SDK 54 / RN 0.81.5 / зависимости package.json — НЕ менялись.
+
+---
+
+## 0.11 Итерация 10 — Read mode 2-API Fallbacks & EAS APK Crash Prevention (2026-10-07)
+
+### 0.11.1 Задачи и проблемы
+1. **Режим «Читать» (текст и аудио)**:
+   - Убрать сторонние API (включая Quran.com API v4). Оставить строго 2 источника.
+   - Таймаут на Primary — 2 секунды (`PRIMARY_TEXT_TIMEOUT_MS = 2000`). Если ответа нет за 2с — немедленный старт Fallback.
+   - Для пользователей из РФ: Primary — `alquran.api.alislam.ru`, Fallback — `api.alquran.cloud`.
+   - Не для РФ: Primary — `api.alquran.cloud`, Fallback — `alquran.api.alislam.ru`.
+   - Аудио в РФ: Primary — `cdn.alislam.ru` (128 kbps), Fallback — `cdn.islamic.network` (128 kbps).
+   - Аудио вне РФ: Primary — `everyayah.com` (128 kbps), Fallback — `cdn.islamic.network` (128 kbps).
+   - Предотвратить двойное воспроизведение и утечки плеера (`useAyahAudio.js`).
+2. **Вылеты в EAS APK сборке**:
+   - Экран карты (`app/mosques.js`) вылетал при сборке APK: `react-native-maps` на Android требует `com.google.android.geo.API_KEY` в `AndroidManifest.xml`. Без ключа Google Maps SDK ронял процесс приложения.
+   - Геолокация в APK не получала доступ: незащищённый `getCurrentPositionAsync` в блоке `catch` падал или зависал при отключённом GPS в шторке телефона; отсутствовала проверка `isLocationEnabledAsync()`; сбои `reverseGeocode` на Android без системного Geocoder.
+   - Иногда вылетало всё приложение на старте: отсутствие `GlobalErrorBoundary` в корне (`app/_layout.js`), незащищённый `JSON.parse` в `getSelectedCity()`, нестабильность New Architecture (`newArchEnabled: true`) с legacy-модулями.
+
+### 0.11.2 Что сделано (архитектура и изменения в коде)
+1. **`services/quranApi.js`**:
+   - Полностью вырезан код `api.quran.com`. Оставлены ровно 2 API: `ALISLAM_API_BASE` (`https://alquran.api.alislam.ru/v1`) и `ALQURAN_CLOUD_API_BASE` (`https://api.alquran.cloud/v1`).
+   - Функция `fetchWithFallback` реализует строгую гонку двух источников: Primary стартует мгновенно, таймер на 2000 мс запускает Fallback при задержке (или при ошибке раньше 2с). Первый ответивший отменяет проигравшего через `AbortController`.
+   - Константы: `PRIMARY_TEXT_TIMEOUT_MS = 2000`, `TOTAL_TIMEOUT_MS = 10000`, `PRIMARY_AUDIO_TIMEOUT_MS = 2000`.
+   - `getAyahAudioUrl`: для пользователей из РФ отдаёт `https://cdn.alislam.ru/quran/audio/128/${id}/${num}.mp3`, вне РФ — `everyayah.com`.
+   - `getAyahAudioUrlFallback`: отдаёт `https://cdn.islamic.network/quran/audio/128/${id}/${num}.mp3`.
+   - Функция `isUserInRussia(city)` оптимизирована: если город выбран явно, страна проверяется по нему, а таймзона устройства — запасной вариант.
+2. **`app/mosques.js`**:
+   - Внедрён класс-предохранитель `MapErrorBoundary` вокруг `<MapView />`. Если на устройстве нет Google Maps API ключа или Google Play Services, экран **не вылетает**: вместо упавшей карты показывается аккуратный информативный блок («Встроенная карта недоступна в этой сборке»), а список мечетей с адресами, расстоянием и кнопками «Маршрут» (открывающими внешние Яндекс Карты, Google Карты или 2GIS) работает на 100%.
+   - Обработан статус `locationStatus === "disabled"`: выводится понятная подсказка включить GPS в шторке телефона.
+3. **`services/locationApi.js` и `utils/AppDataContext.js`**:
+   - Добавлена функция `isLocationServicesEnabled()`.
+   - `getCurrentCoords()` переписана на каскадный 4-уровневый безопасный поиск: High (6с) $\rightarrow$ Balanced (6с) $\rightarrow$ LastKnown (кэш) $\rightarrow$ Lowest (4с, coarse location на Android 12+). Каждый уровень обёрнут в `try/catch` с таймаутом — функция никогда не зависает и не крашит приложение.
+   - `reverseGeocode` защищён таймаутом и безопасным возвратом пустых полей.
+   - `locateUser` в `AppDataContext.js` проверяет активность служб геолокации (`disabled`).
+   - Стартовый `useEffect` в `AppDataContext.js` полностью защищён внешним блоком `try/catch`.
+4. **`app/_layout.js`**:
+   - Добавлен корневой `GlobalErrorBoundary`, перехватывающий любые неожиданные ошибки рендера и показывающий экран восстановления с кнопкой «Перезапустить» вместо краша APK на рабочий стол.
+5. **`utils/storage.js`**:
+   - В `getSelectedCity()` вызов `JSON.parse(value)` защищён `try/catch`.
+6. **`app.json`**:
+   - Установлен `"newArchEnabled": false` для гарантированной стабильности нативного слоя Android в релизных сборках.
+7. **Тесты**:
+   - Обновлены тесты в `scripts/run-tests.js`: таймаут 2000 мс и проверка аудио-источников для РФ и не-РФ. Все **60 тестов успешно проходят** (`npm test`).
 
 ---
 

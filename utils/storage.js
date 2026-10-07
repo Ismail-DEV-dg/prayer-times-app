@@ -68,22 +68,26 @@ export async function saveSelectedCity(city) {
 }
 
 export async function getSelectedCity() {
-  const value = await AsyncStorage.getItem(KEYS.SELECTED_CITY);
-  if (value) {
-    const parsed = normalizeCity(JSON.parse(value));
-    if (parsed) return parsed;
-  }
-  // migration from the old single-city storage (v1.0.0)
-  const legacy = await getSavedCity();
-  if (legacy) {
-    const migrated = normalizeCity(legacy);
-    if (migrated) {
-      await saveSelectedCity(migrated);
-      await addSavedCity(migrated);
-      await AsyncStorage.removeItem(KEYS.CITY);
-      return migrated;
+  try {
+    const value = await AsyncStorage.getItem(KEYS.SELECTED_CITY);
+    if (value) {
+      try {
+        const parsed = normalizeCity(JSON.parse(value));
+        if (parsed) return parsed;
+      } catch (parseErr) {}
     }
-  }
+    // migration from the old single-city storage (v1.0.0)
+    const legacy = await getSavedCity();
+    if (legacy) {
+      const migrated = normalizeCity(legacy);
+      if (migrated) {
+        await saveSelectedCity(migrated);
+        await addSavedCity(migrated);
+        await AsyncStorage.removeItem(KEYS.CITY);
+        return migrated;
+      }
+    }
+  } catch (err) {}
   return null;
 }
 

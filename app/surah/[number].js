@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -11,8 +11,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAppTheme } from "../../theme/ThemeContext";
-import { fetchSurah, getAyahAudioUrl, getAyahAudioUrlFallback, RECITERS } from "../../services/quranApi";
+import {
+  fetchSurah,
+  getAyahAudioUrl,
+  getAyahAudioUrlFallback,
+  RECITERS,
+  DEFAULT_RECITER,
+  normalizeReciterId,
+} from "../../services/quranApi";
 import { useAyahAudio } from "../../hooks/useAyahAudio";
+import { useAppData } from "../../utils/AppDataContext";
 import { getReciter, saveReciter } from "../../utils/storage";
 
 // One surah: a simple vertical list of ayahs. Every ayah is an
@@ -20,16 +28,25 @@ import { getReciter, saveReciter } from "../../utils/storage";
 // the global ayah number). One audio player at a time.
 export default function SurahScreen() {
   const { colors } = useAppTheme();
+  const { selectedCity } = useAppData();
   const router = useRouter();
   const { number } = useLocalSearchParams();
   const surahNumber = Number(number);
 
+  const mountedRef = useRef(true);
   const [surah, setSurah] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [reciter, setReciter] = useState(null);
+  const [reciter, setReciter] = useState(DEFAULT_RECITER);
 
   const audio = useAyahAudio();
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Back guard: never trigger an unhandled GO_BACK; fall back to the
   // surah list (Home would lose the Quran context).
@@ -45,23 +62,29 @@ export default function SurahScreen() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchSurah(surahNumber);
-      setSurah(data);
+      const data = await fetchSurah(surahNumber, selectedCity);
+      if (mountedRef.current) {
+        setSurah(data);
+      }
     } catch (e) {
-      setError(
-        e.message === "NETWORK_ERROR"
-          ? "Нет подключения к интернету. Не удалось загрузить суру."
-          : "Не удалось загрузить Коран."
-      );
+      if (mountedRef.current) {
+        setError(
+          e.message === "NETWORK_ERROR"
+            ? "Нет подключения к интернету. Не удалось загрузить суру."
+            : "Не удалось загрузить Коран."
+        );
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
-  }, [surahNumber]);
+  }, [surahNumber, selectedCity]);
 
   useEffect(() => {
     (async () => {
       const saved = await getReciter();
-      const id = saved || "ar.alafasy";
+      const id = normalizeReciterId(saved);
       setReciter(id);
       load(id);
     })();
@@ -69,17 +92,16 @@ export default function SurahScreen() {
 
   const changeReciter = async (id) => {
     await audio.stop();
-    setReciter(id);
-    await saveReciter(id);
+    const validId = normalizeReciterId(id);
+    setReciter(validId);
+    await saveReciter(validId);
   };
 
   const playAyah = (ayah) => {
     const key = `${surahNumber}/${ayah.numberInSurah}`;
-    // PRIMARY: everyayah.com (per surah/ayah). OPTIONAL FALLBACK:
-    // islamic.network (per global ayah number) — used only if the
-    // primary load fails; a null fallback would be fine too.
-    const primary = getAyahAudioUrl(surahNumber, ayah.numberInSurah, reciter);
-    const fallback = getAyahAudioUrlFallback(ayah.globalNumber, reciter);
+    const activeReciter = normalizeReciterId(reciter);
+    const primary = getAyahAudioUrl(surahNumber, ayah.numberInSurah, activeReciter, ayah.globalNumber, selectedCity);
+    const fallback = getAyahAudioUrlFallback(ayah.globalNumber, activeReciter);
     audio.play(primary, key, fallback).catch(() => {});
   };
 
@@ -132,6 +154,12 @@ export default function SurahScreen() {
             {item.translation}
           </Text>
         ) : null}
+
+        {hasError && (
+          <Text style={[styles.audioErrorText, { color: colors.danger }]}>
+            Не удалось загрузить аудио. Источники недоступны.
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -275,4 +303,9 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
   },
   translation: { fontSize: 14, lineHeight: 21, marginTop: 10 },
+  audioErrorText: {
+    fontSize: 12,
+    marginTop: 8,
+    fontWeight: "500",
+  },
 });

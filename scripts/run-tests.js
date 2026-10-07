@@ -572,6 +572,32 @@ test("Reading-mode RECITERS untouched (3 quick reciters)", () => {
   assert(url === "https://everyayah.com/data/Alafasy_128kbps/002200.mp3", `got ${url}`);
 });
 
+test("Read mode constants: PRIMARY_TEXT_TIMEOUT_MS, TOTAL_TIMEOUT_MS, PRIMARY_AUDIO_TIMEOUT_MS", () => {
+  const quranApi = load("services/quranApi.js");
+  assert(quranApi.PRIMARY_TEXT_TIMEOUT_MS === 2000, `expected 2000, got ${quranApi.PRIMARY_TEXT_TIMEOUT_MS}`);
+  assert(quranApi.TOTAL_TIMEOUT_MS === 10000, `expected 10000, got ${quranApi.TOTAL_TIMEOUT_MS}`);
+  assert(quranApi.PRIMARY_AUDIO_TIMEOUT_MS === 2000, `expected 2000, got ${quranApi.PRIMARY_AUDIO_TIMEOUT_MS}`);
+});
+
+test("Read mode audio: RF uses alislam CDN and non-RF uses everyayah", () => {
+  const quranApi = load("services/quranApi.js");
+  const rfCity = { country: "Россия" };
+  const foreignCity = { country: "United Kingdom" };
+  const urlRF = quranApi.getAyahAudioUrl(1, 1, "ar.alafasy", 1, rfCity);
+  assert(urlRF === "https://cdn.alislam.ru/quran/audio/128/ar.alafasy/1.mp3", `bad RF url: ${urlRF}`);
+  const urlForeign = quranApi.getAyahAudioUrl(1, 1, "ar.alafasy", 1, foreignCity);
+  assert(urlForeign === "https://everyayah.com/data/Alafasy_128kbps/001001.mp3", `bad foreign url: ${urlForeign}`);
+});
+
+test("Read mode audio fallback: reciter IDs mapped and verified 128 kbps", () => {
+  const quranApi = load("services/quranApi.js");
+  for (const r of quranApi.RECITERS) {
+    const fallback = quranApi.getAyahAudioUrlFallback(1, r.id);
+    assert(fallback !== null, `expected fallback url for ${r.id}`);
+    assert(fallback.includes(`/128/${r.id}/1.mp3`), `bad fallback url for ${r.id}: ${fallback}`);
+  }
+});
+
 // ================= THEME ARCHITECTURE & SELECTION UNIQUENESS =================
 
 test("Theme architecture: 6 core styles defined (Тёмная, Светлая, Природа, Синий, Фиолетовый, Минимализм)", () => {

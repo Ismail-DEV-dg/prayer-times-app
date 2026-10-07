@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   requestLocationPermission,
+  isLocationServicesEnabled,
   getCurrentCoords,
   reverseGeocode,
 } from "../services/locationApi";
@@ -139,6 +140,14 @@ export function AppDataProvider({ children }) {
 
   const locateUser = useCallback(async () => {
     setLocationStatus("locating");
+    try {
+      const servicesEnabled = await isLocationServicesEnabled();
+      if (!servicesEnabled) {
+        setLocationStatus("disabled");
+        return null;
+      }
+    } catch (_) {}
+
     const granted = await requestLocationPermission();
     if (!granted) {
       setLocationStatus("denied");
@@ -315,66 +324,78 @@ export function AppDataProvider({ children }) {
 
   useEffect(() => {
     (async () => {
-      const [savedSelected, savedList, savedMethod] = await Promise.all([
-        getSelectedCity(),
-        getSavedCities(),
-        getSavedMethod(),
-      ]);
+      try {
+        const [savedSelected, savedList, savedMethod] = await Promise.all([
+          getSelectedCity(),
+          getSavedCities(),
+          getSavedMethod(),
+        ]);
 
-      if (mountedRef.current) setSavedCities(savedList);
-      if (savedMethod != null) {
-        setCalcMethodState(savedMethod);
-        setMethodOverridden(true);
-      }
+        if (mountedRef.current) setSavedCities(savedList || []);
+        if (savedMethod != null) {
+          setCalcMethodState(savedMethod);
+          setMethodOverridden(true);
+        }
 
-      if (savedSelected) {
-        if (mountedRef.current) setSelectedCity(savedSelected);
-        if (!savedMethod) {
-          const { defaultMethodForCountry } = require("../services/prayerApi");
-          const m = defaultMethodForCountry(savedSelected.country);
-          if (mountedRef.current) setCalcMethodState(m);
-          await loadPrayerTimes(savedSelected, null);
+        if (savedSelected) {
+          if (mountedRef.current) setSelectedCity(savedSelected);
+          if (!savedMethod) {
+            const { defaultMethodForCountry } = require("../services/prayerApi");
+            const m = defaultMethodForCountry(savedSelected.country);
+            if (mountedRef.current) setCalcMethodState(m);
+            await loadPrayerTimes(savedSelected, null);
+          } else {
+            await loadPrayerTimes(savedSelected, savedMethod);
+          }
         } else {
-          await loadPrayerTimes(savedSelected, savedMethod);
-        }
-      } else {
-        // No saved selection: run the GPS flow once. On denial or any
-        // failure the user lands on "choose a city" — never blocked.
-        if (mountedRef.current) setStatus("loading");
-        const granted = await requestLocationPermission();
-        if (!granted) {
-          if (mountedRef.current) setStatus("need-city");
-          return;
-        }
-        try {
-          const coords = await getCurrentCoords();
-          const geo = await reverseGeocode(coords.latitude, coords.longitude);
-          const located = normalizeCity({
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            name: geo.city || "Ваше местоположение",
-            country: geo.country || "",
-            region: geo.region,
-            timezone: geo.timezone,
-            fromGps: true,
-          });
-          if (!located) throw new Error("BAD_LOCATION");
-          if (mountedRef.current) {
-            setCurrentLocation(located);
-            setLocationStatus("ready");
-            setSelectedCity(located);
+          // No saved selection: run the GPS flow once. On denial or any
+          // failure the user lands on "choose a city" — never blocked.
+          if (mountedRef.current) setStatus("loading");
+          const granted = await requestLocationPermission();
+          if (!granted) {
+            if (mountedRef.current) setStatus("need-city");
+            return;
           }
-          await saveSelectedCity(located);
-          await addSavedCity(located);
-          const { defaultMethodForCountry } = require("../services/prayerApi");
-          const m = defaultMethodForCountry(located.country);
-          if (mountedRef.current) setCalcMethodState(m);
-          await loadPrayerTimes(located, null);
-        } catch (e) {
-          if (mountedRef.current) {
-            setLocationStatus("error");
-            setStatus("need-city");
+          try {
+            const coords = await getCurrentCoords();
+            const geo = await reverseGeocode(coords.latitude, coords.longitude);
+            const located = normalizeCity({
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              name: geo?.city || "Ваше местоположение",
+              country: geo?.country || "",
+              region: geo?.region,
+              timezone: geo?.timezone,
+              fromGps: true,
+            });
+            if (located) {
+              if (mountedRef.current) {
+                setCurrentLocation(located);
+                setLocationStatus("ready");
+                setSelectedCity(located);
+              }
+              await saveSelectedCity(located);
+              await addSavedCity(located);
+              const { defaultMethodForCountry } = require("../services/prayerApi");
+              const m = defaultMethodForCountry(located.country);
+              if (mountedRef.current) setCalcMethodState(m);
+              await loadPrayerTimes(located, null);
+            } else {
+              if (mountedRef.current) {
+                setLocationStatus("error");
+                setStatus("need-city");
+              }
+            }
+          } catch (e) {
+            if (mountedRef.current) {
+              setLocationStatus("error");
+              setStatus("need-city");
+            }
           }
+        }
+      } catch (outerErr) {
+        if (mountedRef.current) {
+          setStatus("need-city");
         }
       }
     })();
