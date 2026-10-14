@@ -1,8 +1,8 @@
 import React from "react";
+import { Text } from "react-native";
 import { Tabs } from "expo-router";
 import Svg, { Path, Circle } from "react-native-svg";
-import { useTheme } from "../../theme/ThemeContext";
-import { colors as themeColors, fonts } from "../../theme/theme";
+import { colors, fonts } from "../../theme/theme";
 
 // The Home tab is always the initial screen of the tab group.
 export const unstable_settings = {
@@ -51,33 +51,36 @@ function TabIcon({ routeName, color }) {
   return null;
 }
 
+function TabLabel({ title, focused, color }) {
+  return (
+    <Text
+      style={{
+        color,
+        fontSize: 11,
+        fontFamily: focused ? fonts.ui.bold : fonts.ui.semibold,
+      }}
+    >
+      {title}
+    </Text>
+  );
+}
+
 export default function TabsLayout() {
-  const { colors } = useTheme();
-
-  const activeColor = colors.accent || themeColors.accent;
-  const inactiveColor = colors.muted || themeColors.muted;
-  const navBg = colors.navBg || themeColors.navBg;
-  const borderSoft = colors.borderSoft || themeColors.borderSoft;
-
   return (
     <Tabs
       screenOptions={({ route }) => ({
         headerShown: false,
         animation: "none",
-        tabBarActiveTintColor: activeColor,
-        tabBarInactiveTintColor: inactiveColor,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.muted,
         tabBarStyle: {
-          backgroundColor: navBg,
-          borderTopColor: borderSoft,
+          backgroundColor: colors.navBg,
+          borderTopColor: colors.borderSoft,
           borderTopWidth: 1,
           height: 76,
           paddingBottom: 10,
           paddingTop: 8,
           boxSizing: "border-box",
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontFamily: fonts.ui.semibold,
         },
         tabBarIcon: ({ color }) => <TabIcon routeName={route.name} color={color} />,
       })}
@@ -86,50 +89,45 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Главная",
-          tabBarLabelStyle: ({ focused }) => ({
-            fontSize: 11,
-            fontFamily: focused ? fonts.ui.bold : fonts.ui.semibold,
-          }),
+          tabBarLabel: ({ focused, color }) => (
+            <TabLabel title="Главная" focused={focused} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="quran"
         options={{
           title: "Коран",
-          tabBarLabelStyle: ({ focused }) => ({
-            fontSize: 11,
-            fontFamily: focused ? fonts.ui.bold : fonts.ui.semibold,
-          }),
+          tabBarLabel: ({ focused, color }) => (
+            <TabLabel title="Коран" focused={focused} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="qibla"
         options={{
           title: "Кибла",
-          tabBarLabelStyle: ({ focused }) => ({
-            fontSize: 11,
-            fontFamily: focused ? fonts.ui.bold : fonts.ui.semibold,
-          }),
+          tabBarLabel: ({ focused, color }) => (
+            <TabLabel title="Кибла" focused={focused} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="mosques"
         options={{
           title: "Карта",
-          tabBarLabelStyle: ({ focused }) => ({
-            fontSize: 11,
-            fontFamily: focused ? fonts.ui.bold : fonts.ui.semibold,
-          }),
+          tabBarLabel: ({ focused, color }) => (
+            <TabLabel title="Карта" focused={focused} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: "Ещё",
-          tabBarLabelStyle: ({ focused }) => ({
-            fontSize: 11,
-            fontFamily: focused ? fonts.ui.bold : fonts.ui.semibold,
-          }),
+          tabBarLabel: ({ focused, color }) => (
+            <TabLabel title="Ещё" focused={focused} color={color} />
+          ),
         }}
       />
       {/* Hidden helper tab for location selector to stay within the shell */}
@@ -137,4 +135,3 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
-

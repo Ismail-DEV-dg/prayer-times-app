@@ -48,29 +48,18 @@ export default function NextPrayer({ prayers, timezone }) {
 
   return (
     <View style={styles.card}>
-      {/* Triple Arch SVG background (matching DESIGN.md exact paths) */}
+      {/* Triple Arch SVG background (matching exact reference positioning) */}
       <Svg
-        style={styles.archesSvg}
-        viewBox="0 0 350 210"
-        preserveAspectRatio="xMaxYMax meet"
+        width={128}
+        height={147}
+        viewBox="234 63 128 147"
         fill="none"
         pointerEvents="none"
+        style={{ position: 'absolute', right: -12, bottom: 0 }}
       >
-        <Path
-          d="M235.5 210V128a62.5 62.5 0 0 1 125 0V210"
-          stroke={colors.borderStrong}
-          strokeWidth={1.5}
-        />
-        <Path
-          d="M256.5 210V130.5a41.5 41.5 0 0 1 83 0V210"
-          stroke={colors.borderStrong}
-          strokeWidth={1.5}
-        />
-        <Path
-          d="M280.5 210V138.5a17.5 17.5 0 0 1 35 0V210"
-          stroke={colors.borderStrong}
-          strokeWidth={1.5}
-        />
+        <Path d="M235.5 210V128a62.5 62.5 0 0 1 125 0V210" stroke="#2C4238" strokeWidth={1.5} />
+        <Path d="M256.5 210V130.5a41.5 41.5 0 0 1 83 0V210" stroke="#2C4238" strokeWidth={1.5} />
+        <Path d="M280.5 210V138.5a17.5 17.5 0 0 1 35 0V210" stroke="#2C4238" strokeWidth={1.5} />
       </Svg>
 
       {/* Header Label */}
@@ -103,15 +92,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     position: "relative",
     justifyContent: "flex-start",
-  },
-  archesSvg: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: "100%",
-    height: "100%",
   },
   label: {
     fontFamily: fonts.ui.semibold,
