@@ -34,7 +34,11 @@ import SectionHeader from "../../components/ui/SectionHeader";
 
 // FULL-SURAH Listen player. ONE SURAH = ONE CONTINUOUS TRACK: a single
 // Sound loads the entire surah ({server}/NNN.mp3), so the progress bar,
-// seek, Play/Pause and didJustFinish all refer to the whole surah.
+// seek, Play/Pause and didJustFinish all refer to the whole surah
+// (Al-Kahf shows ~61:47, not 5 seconds of one ayah). Previous/Next move
+// between SURAHS; didJustFinish auto-advances to the next surah and
+// keeps playing. The reading mode (useAyahAudio, per-ayah EveryAyah) is
+// a completely separate screen and is not touched here.
 export default function ListenPlayerScreen() {
   const { colors: _themeColors } = useAppTheme();
   const router = useRouter();
@@ -58,20 +62,21 @@ export default function ListenPlayerScreen() {
   );
 
   // --- mount: reciter + saved position + surah list --------------------
-  const resumeMsRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // reciter: URL param (picker handoff) -> saved -> default
       let id = typeof params.reciter === "string" ? params.reciter : null;
       if (!id || !getListenReciter(id)) {
         id = (await getSavedListenReciter()) || DEFAULT_LISTEN_RECITER;
       }
       if (!getListenReciter(id)) id = DEFAULT_LISTEN_RECITER;
-
+      // position: URL params (entry handoff) -> saved position -> 1
       let s = Number(params.surah);
       let resumeMs = 0;
       const pos = await getListenPosition();
       if (!Number.isInteger(s) || s < 1 || s > 114) {
+        // no surah in params: resume the saved position (or surah 1)
         if (pos) {
           s = pos.surah;
           resumeMs = pos.ms || 0;
@@ -79,6 +84,9 @@ export default function ListenPlayerScreen() {
           s = 1;
         }
       } else if (pos && pos.surah === s) {
+        // surah given via params (entry handoff): if the saved position
+        // belongs to the SAME surah, resume its offset; otherwise start
+        // from the beginning (reciter change / picker selection).
         resumeMs = pos.ms || 0;
       }
       if (!Number.isInteger(s) || s < 1 || s > 114) s = 1;
@@ -90,6 +98,7 @@ export default function ListenPlayerScreen() {
         const list = await fetchSurahList();
         if (!cancelled) setSurahs(list);
       } catch (e) {
+        // The player can still work without names (numbers only).
         if (!cancelled) setSurahs([]);
       } finally {
         if (!cancelled) setLoadingMeta(false);
@@ -98,105 +107,111 @@ export default function ListenPlayerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [params.reciter, params.surah]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // persist the active reciter whenever it changes
+  // resume offset captured on mount (from the saved position)
+  const resumeMsRef = useRef(0);
+
+  // --- persist the reciter choice --------------------------------------
   useEffect(() => {
-    if (reciterId) saveListenReciter(reciterId);
+    if (reciterId) saveListenReciter(reciterId).catch(() => {});
   }, [reciterId]);
 
-  // Auto-play / load when reciter or surah changes
-  const lastKeyRef = useRef(null);
-  useEffect(() => {
-    if (!reciterId || !surahNumber) return;
-    const key = `${reciterId}/${surahNumber}`;
-    if (lastKeyRef.current === key) return;
-    lastKeyRef.current = key;
-
-    const primaryUrl = getSurahAudioUrl(reciterId, surahNumber);
-    const fallbackUrl = getSurahAudioFallbackUrl(reciterId, surahNumber);
-    if (!primaryUrl) return;
-
-    const initialOffset = resumeMsRef.current;
-    resumeMsRef.current = 0;
-
-    audio
-      .loadTrack({
-        key,
-        primaryUrl,
-        fallbackUrl,
-        autoPlay: true,
-        initialPositionMillis: initialOffset,
-      })
-      .catch((err) => {
-        console.warn("[ListenPlayer] loadTrack error:", err?.message || err);
-      });
-  }, [reciterId, surahNumber, audio]);
-
-  // Handle track finished -> next surah
-  const onTrackFinished = useCallback(() => {
-    if (surahNumber < 114) {
-      setSurahNumber((n) => n + 1);
-    }
-  }, [surahNumber]);
+  // --- load the full surah track whenever reciter/surah change ----------
+  // Also the initial load (plays the saved surah from the saved offset).
+  const loadSurah = useCallback(
+    (s, startMs = 0) => {
+      if (!reciterId) return;
+      const primary = getSurahAudioUrl(reciterId, s);
+      const fallback = getSurahAudioFallbackUrl(reciterId, s);
+      if (!primary) return;
+      audio.load(primary, `${reciterId}/${s}`, fallback, startMs).catch(() => {});
+    },
+    [reciterId, audio]
+  );
 
   useEffect(() => {
-    if (audio.didJustFinish) {
-      onTrackFinished();
-    }
-  }, [audio.didJustFinish, onTrackFinished]);
+    if (!reciterId || loadingMeta) return; // wait for the entry setup
+    loadSurah(surahNumber, resumeMsRef.current);
+    resumeMsRef.current = 0; // resume offset only applies once
+    // loadingMeta flips once (true -> false) after the metadata setup and
+    // triggers the FIRST load; later runs fire on reciter/surah changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reciterId, surahNumber, loadingMeta]);
 
-  // Periodically persist playback position
-  const lastSavedPosRef = useRef(0);
+  // --- persist the last position (surah + track offset) ------------------
+  // The audio hook streams position updates; throttled saves every ~5s
+  // and on pause/surah change keep the storage writes cheap.
+  const lastSaveRef = useRef(0);
   useEffect(() => {
-    if (audio.status !== "playing" && audio.status !== "paused") return;
-    const pos = audio.positionMillis || 0;
-    if (Math.abs(pos - lastSavedPosRef.current) > 4000) {
-      lastSavedPosRef.current = pos;
-      saveListenPosition(surahNumber, pos);
-    }
-  }, [audio.status, audio.positionMillis, surahNumber]);
+    if (!reciterId || audio.status === "idle" || audio.status === "error") return;
+    const now = Date.now();
+    if (now - lastSaveRef.current < 5000 && audio.status !== "paused") return;
+    lastSaveRef.current = now;
+    saveListenPosition(surahNumber, audio.positionMillis).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surahNumber, reciterId, audio.positionMillis, audio.status]);
 
-  const reciter = reciterId ? getListenReciter(reciterId) : null;
+  // --- auto-advance on REAL didJustFinish of the whole surah ------------
+  // audio.setOnFinish fires only from the status callback of the CURRENT
+  // sound with didJustFinish === true (see useSurahAudio). On the last
+  // surah (114) playback simply stops — no wrap-around.
+  const onFinishRef = useRef(null);
+  useEffect(() => {
+    onFinishRef.current = (key) => {
+      if (key !== `${reciterId}/${surahNumber}`) return;
+      if (surahNumber >= 114) return; // last surah: honest stop
+      setSurahNumber((s) => Math.min(114, s + 1)); // loads+plays via effect
+    };
+  });
+  useEffect(() => {
+    audio.setOnFinish((key) => {
+      if (onFinishRef.current) onFinishRef.current(key);
+    });
+  });
 
-  const onPrev = () => {
-    if (surahNumber > 1) {
-      saveListenPosition(surahNumber, 0);
-      setSurahNumber((n) => n - 1);
-    }
-  };
-
-  const onNext = () => {
-    if (surahNumber < 114) {
-      saveListenPosition(surahNumber, 0);
-      setSurahNumber((n) => n + 1);
-    }
-  };
-
+  // --- controls ----------------------------------------------------------
   const onPlayPause = () => {
-    if (audio.status === "playing") {
-      audio.pause();
-    } else if (audio.status === "paused") {
-      audio.play();
-    } else if (audio.status === "idle" || audio.status === "error") {
-      const primaryUrl = getSurahAudioUrl(reciterId, surahNumber);
-      const fallbackUrl = getSurahAudioFallbackUrl(reciterId, surahNumber);
-      if (primaryUrl) {
-        audio.loadTrack({
-          key: currentKey,
-          primaryUrl,
-          fallbackUrl,
-          autoPlay: true,
-        });
-      }
-    }
+    audio.playPause().catch(() => {});
+  };
+
+  // Previous/Next = previous/next SURAHS (not ayahs).
+  const onPrev = () => {
+    setSurahNumber((s) => Math.max(1, s - 1));
+  };
+  const onNext = () => {
+    setSurahNumber((s) => Math.min(114, s + 1));
+  };
+
+  const onStop = () => {
+    audio.unload().catch(() => {});
   };
 
   const onChangeReciter = () => {
+    // Stop the current sound before leaving — the old reciter must not
+    // keep playing while the user browses the picker.
+    audio.unload().catch(() => {});
     router.push("/listen/reciter");
   };
 
+  // Surah picker: search by number / english name / translation / arabic.
+  const filteredSurahs = useMemo(() => {
+    const q = surahQuery.trim().toLowerCase();
+    if (!q) return surahs || [];
+    return (surahs || []).filter(
+      (s) =>
+        String(s.number) === q ||
+        s.englishName.toLowerCase().includes(q) ||
+        (s.englishNameTranslation || "").toLowerCase().includes(q) ||
+        (s.name || "").includes(surahQuery.trim())
+    );
+  }, [surahs, surahQuery]);
+
+  const reciter = reciterId ? getListenReciter(reciterId) : null;
+
   const goBackSafely = () => {
+    audio.unload().catch(() => {});
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -204,20 +219,34 @@ export default function ListenPlayerScreen() {
     }
   };
 
-  // --- Seek Bar PanResponder ---------------------------------------------
-  const [seekPreview, setSeekPreview] = useState(null);
+  // --- seek bar (drag over the whole surah track) -------------------------
+  // We track the bar's on-screen X position (pageX from onLayout) so that
+  // during a drag we can compute:
+  //   ratio = (gestureState.moveX - barPageX) / barWidth
+  // This is reliable even when the touch wanders outside the bar view.
+  // Using evt.nativeEvent.locationX in onPanResponderMove is NOT reliable
+  // because the event coordinate origin can shift mid-gesture on Android.
+  const barWidthRef = useRef(1);
+  const barPageXRef = useRef(0);   // absolute screen X of the bar's left edge
+  const durationRef = useRef(0);   // read at gesture time, avoids stale closure
   const seekPreviewRef = useRef(null);
   const barViewRef = useRef(null);
-  const barWidthRef = useRef(1);
-  const barPageXRef = useRef(0);
-  const durationRef = useRef(0);
-  durationRef.current = audio.durationMillis || 0;
 
+  // Keep durationRef in sync
+  useEffect(() => {
+    durationRef.current = audio.durationMillis || 0;
+  }, [audio.durationMillis]);
+
+  const [seekPreview, setSeekPreview] = useState(null); // 0..1 or null
+
+  // PanResponder created ONCE — no deps. All values are read from refs.
   const seekBarPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
+        // Fallback: if measure() failed or hasn't run, calculate pageX dynamically
+        // locationX is the relative touch position in the bar, pageX is absolute
         if (barPageXRef.current === 0 && evt.nativeEvent.pageX > 0 && evt.nativeEvent.locationX >= 0) {
           barPageXRef.current = evt.nativeEvent.pageX - evt.nativeEvent.locationX;
         }
@@ -272,17 +301,6 @@ export default function ListenPlayerScreen() {
   const isPaused = audio.status === "paused";
   const isLoading = audio.status === "loading";
   const hasError = audio.status === "error";
-
-  const filteredSurahs = (surahs || []).filter((s) => {
-    const q = surahQuery.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      String(s.number) === q ||
-      s.englishName.toLowerCase().includes(q) ||
-      (s.englishNameTranslation || "").toLowerCase().includes(q) ||
-      (s.name || "").includes(surahQuery.trim())
-    );
-  });
 
   if (!reciterId) {
     return (
