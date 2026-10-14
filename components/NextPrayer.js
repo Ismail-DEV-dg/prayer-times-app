@@ -83,7 +83,7 @@ export default function NextPrayer({ prayers, timezone }) {
 
 const styles = StyleSheet.create({
   card: {
-    height: 210,
+    height: 218,
     borderRadius: radii.hero, // 28
     backgroundColor: colors.surface, // #15241F
     borderWidth: 1,
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   pill: {
     position: "absolute",
     left: 22,
-    bottom: -10, // прижата к нижнему краю карточки и слегка им обрезана
+    bottom: 16, // целиком внутри карточки с отступом 16 px от низа
     backgroundColor: colors.bg, // #0D1613
     borderWidth: 1,
     borderColor: colors.borderStrong, // #2C4238

@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Path, Circle } from "react-native-svg";
+import Svg, { Path, Circle, Rect } from "react-native-svg";
 import { useRouter } from "expo-router";
 import { useAppData } from "../../utils/AppDataContext";
 import NextPrayer from "../../components/NextPrayer";
@@ -174,18 +174,39 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Outline Gear Button */}
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => router.push("/settings")}
-            accessibilityLabel="Настройки"
-            accessibilityRole="button"
-          >
-            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-              <Circle cx={12} cy={12} r="3" />
-              <Path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
-            </Svg>
-          </TouchableOpacity>
+          {/* Group of two buttons: Calendar & Settings */}
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() => {
+                const now = Date.now();
+                if (now - (global.lastMonthlyNav || 0) > 1000) {
+                  global.lastMonthlyNav = now;
+                  router.push("/monthly");
+                }
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Таблица на месяц"
+            >
+              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Rect x="3" y="4" width="18" height="18" rx="2" />
+                <Path d="M16 2v4M8 2v4M3 10h18" />
+              </Svg>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() => router.push("/settings")}
+              accessibilityLabel="Настройки"
+              accessibilityRole="button"
+            >
+              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                <Circle cx={12} cy={12} r="3" />
+                <Path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+              </Svg>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Hero Next Prayer Card */}
@@ -234,26 +255,6 @@ export default function HomeScreen() {
           nextPrayer={nextPrayer}
           timezone={tz}
         />
-
-        {/* Monthly Table Button (matching ListRow style) */}
-        <TouchableOpacity
-          style={styles.monthlyButton}
-          onPress={() => {
-            const now = Date.now();
-            if (now - (global.lastMonthlyNav || 0) > 1000) {
-              global.lastMonthlyNav = now;
-              router.push("/monthly");
-            }
-          }}
-          activeOpacity={0.7}
-          accessibilityLabel="Таблица на месяц"
-          accessibilityRole="button"
-        >
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-            <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
-          </Svg>
-          <Text style={styles.monthlyButtonText}>Таблица на месяц</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -307,7 +308,12 @@ const styles = StyleSheet.create({
     color: colors.muted,
     lineHeight: 18,
   },
-  settingsBtn: {
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerBtn: {
     width: 44,
     height: 44,
     borderRadius: radii.button, // 14
@@ -374,24 +380,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.muted,
     fontVariant: ["tabular-nums"],
-  },
-  monthlyButton: {
-    minHeight: 53,
-    borderRadius: radii.row, // 18
-    borderWidth: 1,
-    borderColor: colors.borderSoft, // #1E2E28
-    backgroundColor: "transparent",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingHorizontal: 18,
-    boxSizing: "border-box",
-  },
-  monthlyButtonText: {
-    fontFamily: fonts.ui.medium,
-    fontSize: 16,
-    color: colors.text,
   },
   title: {
     fontFamily: fonts.ui.bold,
