@@ -10,6 +10,9 @@
     "test": "node scripts/run-tests.js"
   },
   "dependencies": {
+    "@expo-google-fonts/amiri": "^0.4.1",
+    "@expo-google-fonts/cormorant-garamond": "^0.4.1",
+    "@expo-google-fonts/manrope": "^0.4.2",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "babel-preset-expo": "~54.0.10",
@@ -21,6 +24,7 @@
     "expo-location": "~19.0.0",
     "expo-router": "~6.0.0",
     "expo-sensors": "~15.0.8",
+    "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

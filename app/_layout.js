@@ -1,12 +1,32 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
+import {
+  useFonts,
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
+} from "@expo-google-fonts/manrope";
+import {
+  CormorantGaramond_500Medium,
+  CormorantGaramond_600SemiBold,
+} from "@expo-google-fonts/cormorant-garamond";
+import {
+  Amiri_400Regular,
+  Amiri_700Bold,
+} from "@expo-google-fonts/amiri";
 import { ThemeProvider, useTheme } from "../theme/ThemeContext";
 import { AppDataProvider } from "../utils/AppDataContext";
 import BootSplash from "../components/BootSplash";
+
+// Keep the splash screen visible while loading resources
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Top-level Error Boundary prevents release APK from crashing to desktop
 // if any unexpected rendering or native hydration exception occurs.
@@ -95,6 +115,28 @@ function AppShell() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
+    CormorantGaramond_500Medium,
+    CormorantGaramond_600SemiBold,
+    Amiri_400Regular,
+    Amiri_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
   return (
     <GlobalErrorBoundary>
       <ThemeProvider>
