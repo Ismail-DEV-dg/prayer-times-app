@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useTheme } from "../theme/ThemeContext";
-import { getNextPrayer, getMsUntilPrayer, formatCountdown } from "../utils/time";
+import { View, Text, StyleSheet } from "react-native";
+import Svg, { Path } from "react-native-svg";
+import { colors, fonts, radii } from "../theme/theme";
+import { getNextPrayer, getMsUntilPrayer } from "../utils/time";
 
 const PRAYER_NAMES = {
   Fajr: "Фаджр",
@@ -11,15 +11,25 @@ const PRAYER_NAMES = {
   Asr: "Аср",
   Maghrib: "Магриб",
   Isha: "Иша",
+  Tahajjud: "Тахаджуд",
+  Duha: "Духа",
 };
 
-// Hero Next Prayer card matching the Settings mockup style
+function formatDuration(ms) {
+  const totalMins = Math.max(0, Math.floor(ms / (1000 * 60)));
+  const hours = Math.floor(totalMins / 60);
+  const minutes = totalMins % 60;
+  if (hours > 0) {
+    return `${hours} ч ${minutes} мин`;
+  }
+  return `${minutes} мин`;
+}
+
 export default function NextPrayer({ prayers, timezone }) {
-  const { colors } = useTheme();
-  const [, setNowMs] = useState(() => Date.now());
+  const [, setTick] = useState(0);
 
   useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -29,134 +39,132 @@ export default function NextPrayer({ prayers, timezone }) {
   if (!next) return null;
 
   const msLeft = getMsUntilPrayer(next.time, timezone, next.tomorrow);
-  const isSoon = msLeft > 0 && msLeft <= 15 * 60 * 1000;
   const prayerDisplayName = PRAYER_NAMES[next.name] || next.name;
+  const timeRemainingText = formatDuration(msLeft);
+
+  const labelText = next.tomorrow
+    ? "СЛЕДУЮЩИЙ НАМАЗ · ЗАВТРА"
+    : "СЛЕДУЮЩИЙ НАМАЗ · СЕГОДНЯ";
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.heroCardBg || colors.card,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      {/* Left: Official App Avatar Emblem Badge */}
-      <View
-        style={[
-          styles.emblemCircle,
-          {
-            backgroundColor: colors.badgeBg || "rgba(255,255,255,0.1)",
-            borderColor: colors.badgeBorder || colors.accent,
-          },
-        ]}
+    <View style={styles.card}>
+      {/* Triple Arch SVG background (matching DESIGN.md exact paths) */}
+      <Svg
+        style={styles.archesSvg}
+        viewBox="0 0 350 210"
+        preserveAspectRatio="xMaxYMax meet"
+        fill="none"
+        pointerEvents="none"
       >
-        <Image
-          source={require("../assets/icon.png")}
-          style={styles.emblemImage}
-          resizeMode="cover"
+        <Path
+          d="M235.5 210V128a62.5 62.5 0 0 1 125 0V210"
+          stroke={colors.borderStrong}
+          strokeWidth={1.5}
         />
-      </View>
+        <Path
+          d="M256.5 210V130.5a41.5 41.5 0 0 1 83 0V210"
+          stroke={colors.borderStrong}
+          strokeWidth={1.5}
+        />
+        <Path
+          d="M280.5 210V138.5a17.5 17.5 0 0 1 35 0V210"
+          stroke={colors.borderStrong}
+          strokeWidth={1.5}
+        />
+      </Svg>
 
-      {/* Right: Next Prayer Info & Countdown */}
-      <View style={styles.contentCol}>
-        <View style={styles.headerRow}>
-          <Text style={[styles.prayerName, { color: colors.text }]}>
-            {prayerDisplayName}
-          </Text>
+      {/* Header Label */}
+      <Text style={styles.label}>{labelText}</Text>
 
-          <View
-            style={[
-              styles.pillBadge,
-              {
-                backgroundColor: isSoon
-                  ? colors.accentSoft
-                  : colors.badgeBg || colors.cardSecondary,
-                borderColor: isSoon ? colors.accent : colors.border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.pillText,
-                { color: isSoon ? colors.accent : colors.textSecondary },
-              ]}
-            >
-              {isSoon ? "СКОРО" : formatCountdown(msLeft)}
-            </Text>
-          </View>
-        </View>
+      {/* Prayer Name */}
+      <Text style={styles.name}>{prayerDisplayName}</Text>
 
-        <Text style={[styles.prayerTime, { color: colors.text }]}>{next.time}</Text>
+      {/* Prayer Time */}
+      <Text style={styles.time}>{next.time}</Text>
+
+      {/* Pill Badge slightly cut off at the bottom card edge */}
+      <View style={styles.pill}>
+        <View style={styles.pillDot} />
+        <Text style={styles.pillMuted}>через</Text>
+        <Text style={styles.pillTime}>{timeRemainingText}</Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+  card: {
+    height: 210,
+    borderRadius: radii.hero, // 28
+    backgroundColor: colors.surface, // #15241F
     borderWidth: 1,
-    marginVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  emblemCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 14,
+    borderColor: colors.border, // #243630
+    padding: 22,
     overflow: "hidden",
+    position: "relative",
+    justifyContent: "flex-start",
   },
-  emblemImage: {
+  archesSvg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     width: "100%",
     height: "100%",
-    borderRadius: 25,
   },
-  contentCol: {
-    flex: 1,
-    justifyContent: "center",
+  label: {
+    fontFamily: fonts.ui.semibold,
+    fontSize: 13,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: colors.accent, // #E3BE72
   },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 2,
+  name: {
+    fontFamily: fonts.serif.semibold,
+    fontSize: 40,
+    color: colors.text, // #EDE6D6
+    lineHeight: 46,
+    marginTop: 4,
   },
-  prayerName: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  prayerTime: {
-    fontSize: 28,
-    fontWeight: "800",
-    letterSpacing: -0.5,
+  time: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 68,
+    letterSpacing: -2,
+    color: colors.text,
     fontVariant: ["tabular-nums"],
+    lineHeight: 70,
     marginTop: 2,
   },
-  pillBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+  pill: {
+    position: "absolute",
+    left: 22,
+    bottom: -10, // прижата к нижнему краю карточки и слегка им обрезана
+    backgroundColor: colors.bg, // #0D1613
     borderWidth: 1,
+    borderColor: colors.borderStrong, // #2C4238
+    borderRadius: radii.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
   },
-  pillText: {
-    fontSize: 11,
-    fontWeight: "800",
+  pillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent, // #E3BE72
+  },
+  pillMuted: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 14,
+    color: colors.muted, // #8FA89E
+  },
+  pillTime: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 15,
+    color: colors.text,
     fontVariant: ["tabular-nums"],
-    letterSpacing: 0.5,
   },
 });
