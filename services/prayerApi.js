@@ -380,3 +380,145 @@ async function fetchFromAlAdhan({ latitude, longitude, method, timezone }) {
     },
   };
 }
+
+export async function fetchMonthlyCalendar({ latitude, longitude, method, timezone, country, name, region, month, year }) {
+  if (method == null) {
+    const match = resolvePrayerSource({ name, region, country, latitude, longitude });
+    if (match && Array.isArray(match.chain)) {
+      for (const entry of match.chain) {
+        try {
+          const official = await fetchMonthlyFromOfficial(entry, { month, year, timezone });
+          if (official) return official;
+        } catch (e) {}
+      }
+    } else if (match) {
+      try {
+        const official = await fetchMonthlyFromOfficial(match, { month, year, timezone });
+        if (official) return official;
+      } catch (e) {}
+    }
+  }
+
+  // Fallback to AlAdhan API
+  const effectiveMethod = method != null ? method : defaultMethodForCountry(country);
+  const url = `${BASE_URL}/calendar/${year}/${month}?latitude=${latitude}&longitude=${longitude}&method=${effectiveMethod}`;
+  
+  const response = await fetchWithTimeout(url, 8000);
+  if (!response.ok) throw new Error("API_ERROR");
+  const json = await response.json();
+  if (!json || json.code !== 200 || !json.data || !Array.isArray(json.data)) {
+    throw new Error("API_ERROR");
+  }
+
+  return json.data.map((dayData) => {
+    const timings = dayData.timings;
+    const prayers = [];
+    for (const key of PRAYER_KEYS) {
+      const time = cleanTime(timings[key]);
+      if (time) prayers.push({ name: key, time });
+    }
+    return {
+      date: dayData.date.gregorian.date, // DD-MM-YYYY
+      day: String(parseInt(dayData.date.gregorian.day, 10)),
+      weekday: dayData.date.gregorian.weekday.en,
+      prayers,
+    };
+  });
+}
+
+// Fetch a full month from an official source entry.
+async function fetchMonthlyFromOfficial(entry, { month, year, timezone }) {
+  const { source, resolved } = entry;
+  
+  // 1) Dagestan JSON: Array of 365 days.
+  if (source.fetchType === "muftiyat_rd_json") {
+    if (!resolved || !resolved.slug) return null;
+    const url = `${source.endpoint}${resolved.slug}.json`;
+    const response = await fetchWithTimeout(url, 4000);
+    if (!response.ok) throw new Error("API_ERROR");
+    const yearData = await response.json();
+    if (!Array.isArray(yearData) || yearData.length !== 365) throw new Error("API_ERROR");
+    
+    // Determine the number of days in the requested month
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const timeOf = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v) : null);
+    
+    const monthly = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      // Create a dummy date in the requested month to calculate the day of the year
+      // Note: Dagestan's 365-day array implicitly skips leap day. 
+      // We calculate dayOfYear assuming a non-leap year (e.g. 2023).
+      const dummyStart = Date.UTC(2023, 0, 0);
+      const dummyDate = Date.UTC(2023, month - 1, d);
+      const dayOfYear = Math.floor((dummyDate - dummyStart) / 86400000);
+      const dayIndex = dayOfYear - 1;
+      
+      if (dayIndex >= 0 && dayIndex < 365) {
+        const dayInfo = yearData[dayIndex];
+        if (dayInfo) {
+          const prayers = [
+            { name: "Fajr", key: "namaz_1" },
+            { name: "Sunrise", key: "voshod" },
+            { name: "Dhuhr", key: "namaz_2" },
+            { name: "Asr", key: "namaz_3" },
+            { name: "Maghrib", key: "namaz_4" },
+            { name: "Isha", key: "namaz_5" },
+          ].map(({ name, key }) => ({ name, time: timeOf(dayInfo[key]) })).filter(p => p.time !== null);
+          
+          if (prayers.length === 6) {
+            monthly.push({
+              date: `${String(d).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`,
+              day: String(d),
+              prayers,
+            });
+          }
+        }
+      }
+    }
+    if (monthly.length === 0) throw new Error("API_ERROR");
+    return monthly;
+  }
+
+  // 2) Tatarstan CSV: rows of `DD.MM.YYYY;...`
+  if (source.fetchType === "dumrt_csv") {
+    if (!resolved || !resolved.slug) return null;
+    const url = `${source.endpoint}${resolved.slug}.csv`;
+    const response = await fetchWithTimeout(url, 4000);
+    if (!response.ok) throw new Error("API_ERROR");
+    const text = await response.text();
+    if (!text || text.length < 200) throw new Error("API_ERROR");
+
+    const wantedSuffix = `.${String(month).padStart(2, "0")}.${year}`;
+    const monthly = [];
+    const timeOf = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "").trim()) ? String(v).trim() : null);
+
+    for (const rawLine of text.split(/\r?\n/)) {
+      const parts = rawLine.split(";");
+      if (parts.length < 9) continue;
+      const dateCell = parts[0].trim(); // e.g. "01.09.2026"
+      if (dateCell.endsWith(wantedSuffix)) {
+        const dStr = dateCell.substring(0, 2); // "01"
+        const prayers = [
+          { name: "Fajr", key: 2 },
+          { name: "Sunrise", key: 3 },
+          { name: "Dhuhr", key: 5 },
+          { name: "Asr", key: 6 },
+          { name: "Maghrib", key: 7 },
+          { name: "Isha", key: 8 },
+        ].map(({ name, key }) => ({ name, time: timeOf(parts[key]) })).filter(p => p.time !== null);
+        
+        if (prayers.length === 6) {
+          monthly.push({
+            date: `${dStr}-${String(month).padStart(2, "0")}-${year}`,
+            day: String(parseInt(dStr, 10)),
+            prayers,
+          });
+        }
+      }
+    }
+    if (monthly.length === 0) throw new Error("API_ERROR");
+    return monthly;
+  }
+
+  return null;
+}

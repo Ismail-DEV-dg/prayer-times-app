@@ -30,6 +30,7 @@ export function useAyahAudio() {
   const [loadingKey, setLoadingKey] = useState(null);
   const [errorKey, setErrorKey] = useState(null);
   const [paused, setPaused] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
 
   // Optional finish callback (Listen player auto-advance). Kept in a ref
   // so play() never needs to change identity when the callback changes.
@@ -37,6 +38,16 @@ export function useAyahAudio() {
   const setOnFinish = useCallback((fn) => {
     onFinishRef.current = typeof fn === "function" ? fn : null;
   }, []);
+
+  const toggleLoop = useCallback(async () => {
+    if (soundRef.current) {
+      const nextLooping = !isLooping;
+      try {
+        await soundRef.current.setIsLoopingAsync(nextLooping);
+        if (mountedRef.current) setIsLooping(nextLooping);
+      } catch (e) {}
+    }
+  }, [isLooping]);
 
   // Releases the current Sound (if any) and invalidates every
   // in-flight load. Safe to call at any time, mounted or not.
@@ -58,6 +69,7 @@ export function useAyahAudio() {
       setPlayingKey(null);
       setLoadingKey(null);
       setPaused(false);
+      setIsLooping(false);
     }
   }, []);
 
@@ -83,14 +95,21 @@ export function useAyahAudio() {
     }
   }, []);
 
-  // play(url, key, fallbackUrl = null) — loads and plays; guards
-  // against double-taps and concurrent playback.
+  // play(url, key, fallbackUrl = null, forceRestart = false)
   const play = useCallback(
-    async (url, key, fallbackUrl = null) => {
+    async (url, key, fallbackUrl = null, forceRestart = false) => {
       if (!mountedRef.current) return;
       setErrorKey(null);
 
       if (playingKey === key && soundRef.current) {
+        if (forceRestart) {
+          try {
+            await soundRef.current.setPositionAsync(0);
+            await soundRef.current.playAsync();
+            if (mountedRef.current) setPaused(false);
+          } catch (e) {}
+          return;
+        }
         // toggle pause/resume for the current ayah
         try {
           if (paused) {
@@ -222,6 +241,10 @@ export function useAyahAudio() {
               if (status.isLoaded && status.didJustFinish) {
                 // only the CURRENT sound may react to its own finish
                 if (soundRef.current === sound) {
+                  if (status.isLooping) {
+                    // It will loop natively, do not unload
+                    return;
+                  }
                   unload();
                   if (onFinishRef.current) onFinishRef.current(key);
                 }
@@ -278,5 +301,5 @@ export function useAyahAudio() {
     };
   }, []);
 
-  return { play, stop, playingKey, loadingKey, errorKey, paused, setOnFinish, getPosition };
+  return { play, stop, playingKey, loadingKey, errorKey, paused, setOnFinish, getPosition, isLooping, toggleLoop };
 }

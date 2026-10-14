@@ -14,6 +14,8 @@ const KEYS = {
   LISTEN_RECITER: "@prayer_times/quran_listen_reciter",
   LISTEN_POSITION: "@prayer_times/quran_listen_position",
   MOSQUE_BG: "@prayer_times/show_mosque_bg",
+  ADJUSTMENTS: "@prayer_times/adjustments",
+  EXTRA_PRAYERS: "@prayer_times/extra_prayers",
 };
 
 // --- theme ---
@@ -237,5 +239,37 @@ export async function getListenPosition() {
     return { surah: s, ms: Math.min(Math.floor(m), 24 * 60 * 60 * 1000) };
   } catch (e) {
     return null;
+  }
+}
+
+// --- Prayer Adjustments & Extra Prayers ---
+
+export async function saveAdjustments(adjustments) {
+  await AsyncStorage.setItem(KEYS.ADJUSTMENTS, JSON.stringify(adjustments || {}));
+}
+
+export async function getAdjustments() {
+  const value = await AsyncStorage.getItem(KEYS.ADJUSTMENTS);
+  if (!value) return {};
+  try {
+    return JSON.parse(value) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+export async function saveExtraPrayers(extras) {
+  await AsyncStorage.setItem(KEYS.EXTRA_PRAYERS, JSON.stringify(extras || { tahajjud: false, duha: false }));
+}
+
+export async function getExtraPrayers() {
+  const value = await AsyncStorage.getItem(KEYS.EXTRA_PRAYERS);
+  if (!value) return { tahajjud: false, duha: false };
+  try {
+    const parsed = JSON.parse(value);
+    // Support migrating from 'witr' if they had it previously
+    return { tahajjud: !!parsed?.tahajjud, duha: !!parsed?.duha };
+  } catch (e) {
+    return { tahajjud: false, duha: false };
   }
 }

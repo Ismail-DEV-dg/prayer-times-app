@@ -97,12 +97,12 @@ export default function SurahScreen() {
     await saveReciter(validId);
   };
 
-  const playAyah = (ayah) => {
+  const playAyah = (ayah, forceRestart = false) => {
     const key = `${surahNumber}/${ayah.numberInSurah}`;
     const activeReciter = normalizeReciterId(reciter);
     const primary = getAyahAudioUrl(surahNumber, ayah.numberInSurah, activeReciter, ayah.globalNumber, selectedCity);
     const fallback = getAyahAudioUrlFallback(ayah.globalNumber, activeReciter);
-    audio.play(primary, key, fallback).catch(() => {});
+    audio.play(primary, key, fallback, forceRestart).catch(() => {});
   };
 
   const renderAyah = ({ item }) => {
@@ -121,7 +121,7 @@ export default function SurahScreen() {
             borderColor: isPlaying || isPaused ? colors.accent : colors.border,
           },
         ]}
-        onPress={() => playAyah(item)}
+        onPress={() => playAyah(item, true)}
         activeOpacity={0.7}
       >
         <View style={styles.ayahTopRow}>
@@ -135,10 +135,25 @@ export default function SurahScreen() {
               <ActivityIndicator size="small" color={colors.accent} />
             ) : hasError ? (
               <Ionicons name="warning-outline" size={18} color={colors.danger} />
-            ) : isPlaying ? (
-              <Ionicons name="pause" size={18} color={colors.accent} />
-            ) : isPaused ? (
-              <Ionicons name="play" size={18} color={colors.accent} />
+            ) : isPlaying || isPaused ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                <TouchableOpacity
+                  onPress={() => audio.toggleLoop()}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Ionicons
+                    name="repeat"
+                    size={18}
+                    color={audio.isLooping ? colors.accent : colors.textSecondary}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => playAyah(item, false)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Ionicons name={isPlaying ? "pause" : "play"} size={18} color={colors.accent} />
+                </TouchableOpacity>
+              </View>
             ) : (
               <Ionicons name="headset-outline" size={18} color={colors.textSecondary} />
             )}
@@ -214,6 +229,14 @@ export default function SurahScreen() {
           </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {surah.englishNameTranslation} · {surah.numberOfAyahs} аятов
+          </Text>
+        </View>
+        <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
+          <Text style={{ fontSize: 9, color: colors.textSecondary, textTransform: "uppercase", fontWeight: "700", letterSpacing: 0.5 }}>
+            Перевод
+          </Text>
+          <Text style={{ fontSize: 11, color: colors.text, fontWeight: "500", marginTop: 2 }}>
+            Э. Кулиев
           </Text>
         </View>
       </View>

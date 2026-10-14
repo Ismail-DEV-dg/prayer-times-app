@@ -12,6 +12,8 @@ const PRAYER_ICONS = {
   Asr: "weather-sunny",
   Maghrib: "weather-sunset-down",
   Isha: "weather-night",
+  Tahajjud: "weather-night",
+  Duha: "weather-sunny",
 };
 
 const PRAYER_NAMES = {
@@ -21,6 +23,8 @@ const PRAYER_NAMES = {
   Asr: "Аср",
   Maghrib: "Магриб",
   Isha: "Иша",
+  Tahajjud: "Тахаджуд",
+  Duha: "Духа",
 };
 
 export default function PrayerTimesList({ prayers, nextPrayer, timezone }) {

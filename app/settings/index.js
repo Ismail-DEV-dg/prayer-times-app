@@ -134,6 +134,12 @@ export default function FullSettingsScreen() {
         {renderRow("time-outline", "Источник и метод", methodValue, () =>
           router.push("/settings/method")
         )}
+        {renderRow("options-outline", "Ручная корректировка", "Изменить минуты", () =>
+          router.push("/settings/adjustments")
+        )}
+        {renderRow("moon-outline", "Доп. молитвы", "Тахаджуд, Духа", () =>
+          router.push("/settings/extra-prayers")
+        )}
         {renderRow(
           "locate-outline",
           "Определить местоположение заново",

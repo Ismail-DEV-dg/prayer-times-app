@@ -171,6 +171,22 @@ export default function HomeScreen() {
           nextPrayer={nextPrayer}
           timezone={tz}
         />
+
+        {/* Monthly Table Button */}
+        <TouchableOpacity
+          style={[styles.monthlyButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => {
+            const now = Date.now();
+            if (now - (global.lastMonthlyNav || 0) > 1000) {
+              global.lastMonthlyNav = now;
+              router.push("/monthly");
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="calendar-outline" size={20} color={colors.accent} />
+          <Text style={[styles.monthlyButtonText, { color: colors.text }]}>Таблица на месяц</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -219,4 +235,19 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "700" },
   muted: { fontSize: 14, lineHeight: 20 },
   button: { marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  monthlyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginHorizontal: 4,
+  },
+  monthlyButtonText: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
 });

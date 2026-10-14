@@ -58,8 +58,14 @@ export function AppDataProvider({ children }) {
 
   const [calcMethod, setCalcMethodState] = useState(null); // null until loaded; number afterwards
   const [methodOverridden, setMethodOverridden] = useState(false); // user explicitly picked a method
-  const [prayerData, setPrayerData] = useState(null);
+  
+  // RAW data from the API or cache (unadjusted)
+  const [rawPrayerData, setRawPrayerData] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Settings for prayers
+  const [adjustments, setAdjustments] = useState({});
+  const [extraPrayers, setExtraPrayers] = useState({ tahajjud: false, duha: false });
 
   // BACKGROUND mosque prefetch. Pure DATA: runs silently once GPS is
   // known, stores results for the /mosques screen. It never touches
@@ -76,6 +82,65 @@ export function AppDataProvider({ children }) {
       mountedRef.current = false;
     };
   }, []);
+
+  function timeToMins(t) {
+    if (!t) return 0;
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  }
+
+  function minsToTime(mins) {
+    let h = Math.floor(mins / 60) % 24;
+    if (h < 0) h += 24;
+    let m = mins % 60;
+    if (m < 0) m += 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
+  const prayerData = useMemo(() => {
+    if (!rawPrayerData) return null;
+    const adjusted = { ...rawPrayerData, prayers: [...rawPrayerData.prayers] };
+    
+    // 1) Apply manual offsets
+    adjusted.prayers = adjusted.prayers.map((p) => {
+      const offset = adjustments[p.name] || 0;
+      if (offset === 0 || !p.time) return p;
+      return { ...p, time: minsToTime(timeToMins(p.time) + offset) };
+    });
+
+    // 2) Append extra prayers (Tahajjud & Duha)
+    if (extraPrayers.tahajjud || extraPrayers.duha) {
+      const fajr = adjusted.prayers.find((p) => p.name === "Fajr")?.time;
+      const sunrise = adjusted.prayers.find((p) => p.name === "Sunrise")?.time;
+      const maghrib = adjusted.prayers.find((p) => p.name === "Maghrib")?.time;
+      const isha = adjusted.prayers.find((p) => p.name === "Isha")?.time;
+
+      if (extraPrayers.duha && sunrise) {
+        // Duha time: Sunrise + 20 minutes
+        const duhaMins = timeToMins(sunrise) + 20;
+        const duhaObj = { name: "Duha", time: minsToTime(duhaMins) };
+        // Insert after Sunrise
+        const sunriseIndex = adjusted.prayers.findIndex(p => p.name === "Sunrise");
+        if (sunriseIndex !== -1) {
+          adjusted.prayers.splice(sunriseIndex + 1, 0, duhaObj);
+        } else {
+          adjusted.prayers.push(duhaObj);
+        }
+      }
+
+      if (extraPrayers.tahajjud && fajr && maghrib && isha) {
+        const fajrMins = timeToMins(fajr);
+        const maghribMins = timeToMins(maghrib);
+        // Night duration: Maghrib -> Fajr
+        const nightMins = (24 * 60 - maghribMins) + fajrMins;
+        
+        const tahajjudStart = Math.floor(maghribMins + nightMins * (2 / 3));
+        adjusted.prayers.push({ name: "Tahajjud", time: minsToTime(tahajjudStart) });
+      }
+    }
+    
+    return adjusted;
+  }, [rawPrayerData, adjustments, extraPrayers]);
 
   // ---------- prayer loading (selectedCity only) ----------
   //
@@ -98,7 +163,7 @@ export function AppDataProvider({ children }) {
     
     if (cached && cached.payload && cached.payload.prayers) {
       const fresh = isCacheFresh(cached, city.timezone);
-      setPrayerData({
+      setRawPrayerData({
         ...cached.payload,
         fromCache: !fresh,
         cachedAt: cached.cachedAt,
@@ -126,7 +191,7 @@ export function AppDataProvider({ children }) {
         region: city.region,
       });
       if (!mountedRef.current) return;
-      setPrayerData(data);
+      setRawPrayerData(data);
       setStatus("ready");
       const { todayInTimeZone } = require("./time");
       savePrayerCache(city, cacheKey, {
@@ -141,7 +206,7 @@ export function AppDataProvider({ children }) {
       // manual schedule and vice versa).
       const cached = await getPrayerCache(city, cacheKey);
       if (cached && cached.payload && cached.payload.prayers) {
-        setPrayerData({
+        setRawPrayerData({
           ...cached.payload,
           fromCache: true,
           cachedAt: cached.cachedAt,
@@ -149,7 +214,7 @@ export function AppDataProvider({ children }) {
         setStatus("offline-cache");
         return;
       }
-      setPrayerData(null);
+      setRawPrayerData(null);
       setStatus("error");
       setErrorMessage(
         code === "NETWORK_ERROR"
@@ -378,13 +443,19 @@ export function AppDataProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        const [savedSelected, savedList, savedMethod] = await Promise.all([
+        const [savedSelected, savedList, savedMethod, savedAdj, savedExtras] = await Promise.all([
           getSelectedCity(),
           getSavedCities(),
           getSavedMethod(),
+          require("./storage").getAdjustments(),
+          require("./storage").getExtraPrayers(),
         ]);
 
-        if (mountedRef.current) setSavedCities(savedList || []);
+        if (mountedRef.current) {
+          setSavedCities(savedList || []);
+          setAdjustments(savedAdj);
+          setExtraPrayers(savedExtras);
+        }
         if (savedMethod != null) {
           setCalcMethodState(savedMethod);
           setMethodOverridden(true);
@@ -433,6 +504,16 @@ export function AppDataProvider({ children }) {
       calcMethod,
       methodOverridden,
       prayerData,
+      adjustments,
+      extraPrayers,
+      updateAdjustments: async (newAdj) => {
+        setAdjustments(newAdj);
+        await require("./storage").saveAdjustments(newAdj);
+      },
+      updateExtraPrayers: async (newExtras) => {
+        setExtraPrayers(newExtras);
+        await require("./storage").saveExtraPrayers(newExtras);
+      },
       refreshing,
       backgroundMosques: mosquesCache,
       backgroundMosquesFetching: mosquesFetching,
@@ -458,6 +539,8 @@ export function AppDataProvider({ children }) {
       calcMethod,
       methodOverridden,
       prayerData,
+      adjustments,
+      extraPrayers,
       refreshing,
       mosquesCache,
       mosquesFetching,

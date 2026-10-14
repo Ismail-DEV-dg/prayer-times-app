@@ -8,11 +8,6 @@ import { useAppData } from "../../utils/AppDataContext";
 import CitySearch from "../../components/CitySearch";
 import { isSameCity } from "../../utils/city";
 
-// Enable LayoutAnimation on Android (one-time, standard pattern).
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 // Soft native layout animation for list mutations (add/remove a saved
 // city): rows glide into place instead of jumping. LayoutAnimation is
 // fully native — no per-frame JS work, safe for performance.
