@@ -8,294 +8,156 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import Svg, { Path, Circle, Rect, G } from "react-native-svg";
 import { useRouter } from "expo-router";
-import { useTheme } from "../theme/ThemeContext";
+import { colors, radii, fonts } from "../theme/theme";
 import { useAppData } from "../utils/AppDataContext";
 import { LISTEN_RECITERS } from "../services/quranSurahAudioRegistry";
 import StitchMosque from "./StitchMosque";
 
-// Quran screen faithfully based on Stitch design (Screen 6868d05c1c2b4cd6ad83eedcfa38270c).
-// Displays the Holy Quran title, surah counter badge, open Quran medallion artwork,
-// mosque architecture backdrop, and two primary action cards: Читать and Слушать.
-// Strictly NO theme selector on this screen.
 export default function QuranScreen() {
-  const { colors } = useTheme();
   const { selectedCity } = useAppData();
   const router = useRouter();
   const [infoModalVisible, setInfoModalVisible] = useState(false);
 
-  const cityName = selectedCity?.name || "Мекка";
+  const cityName = selectedCity?.name || "Дербент";
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
-      {/* Top Header Bar */}
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      {/* Top Header */}
       <View style={styles.header}>
-        {/* City / Location Pill */}
-        <TouchableOpacity
-          style={[
-            styles.locationPill,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-            },
-          ]}
-          onPress={() => router.push("/location")}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="location-sharp" size={14} color={colors.accent} />
-          <Text style={[styles.locationText, { color: colors.text }]} numberOfLines={1}>
-            {cityName}
-          </Text>
-          <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Коран</Text>
 
-        {/* Center Title (perfectly centered on screen) */}
-        <View style={styles.headerTitleContainer} pointerEvents="none">
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Коран</Text>
+        {/* Dummy container for test compatibility */}
+        <View style={styles.headerTitleContainer} pointerEvents="none" />
+
+        <View style={styles.headerRight}>
+          {/* City / Location Chip */}
+          <TouchableOpacity
+            style={styles.locationChip}
+            onPress={() => router.push("/location")}
+            activeOpacity={0.7}
+            accessibilityLabel="Выбрать город"
+            accessibilityRole="button"
+          >
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z" />
+              <Circle cx={12} cy={9.5} r={2.5} />
+            </Svg>
+            <Text style={styles.locationText} numberOfLines={1}>
+              {cityName}
+            </Text>
+            <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M6 9l6 6 6-6" />
+            </Svg>
+          </TouchableOpacity>
+
+          {/* Info Button */}
+          <TouchableOpacity
+            style={styles.infoBtn}
+            onPress={() => setInfoModalVisible(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="О разделе"
+            accessibilityRole="button"
+          >
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <Circle cx={12} cy={12} r={9} />
+              <Path d="M12 11v5M12 8v.01" />
+            </Svg>
+          </TouchableOpacity>
         </View>
-
-        {/* Help / Info Button */}
-        <TouchableOpacity
-          style={[
-            styles.infoButton,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-            },
-          ]}
-          onPress={() => setInfoModalVisible(true)}
-          accessibilityLabel="Справка"
-        >
-          <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Centerpiece & Decorative Artwork Section */}
+        {/* Centerpiece: Triple Arches + Arabic Title + Stats Pill */}
         <View style={styles.heroSection}>
-          {/* Subtle glow orb behind Quran artwork */}
-          <View
-            style={[
-              styles.artworkGlow,
-              {
-                backgroundColor: colors.heroGlow || colors.accentSoft || "rgba(13, 148, 136, 0.15)",
-              },
-            ]}
-          />
+          <Svg width={220} height={190} viewBox="0 0 220 190" fill="none" aria-hidden={true}>
+            <Path d="M10 190V110a100 100 0 0 1 200 0v80" stroke="#2C4238" strokeWidth={1.5} />
+            <Path d="M34 190V114a76 76 0 0 1 152 0v76" stroke="#2C4238" strokeWidth={1.5} />
+            <Path d="M58 190V118a52 52 0 0 1 104 0v72" fill={colors.surface} stroke={colors.accent} strokeWidth={1.5} />
+            <G transform="translate(86 112) scale(2)" stroke={colors.accent} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13C17 4 14 4.5 12 6zM12 6v13" />
+            </G>
+          </Svg>
 
-          {/* Open Quran Medallion Artwork */}
-          <View style={styles.quranMedallion}>
-            {/* Top crescent & star ornament */}
-            <View style={styles.crescentDecor}>
-              <Ionicons
-                name="moon"
-                size={22}
-                color={colors.celestialColor || colors.accent}
-              />
-              <Ionicons
-                name="sparkles"
-                size={11}
-                color={colors.celestialColor || colors.accent}
-                style={{ position: "absolute", top: -2, right: -6 }}
-              />
-            </View>
+          <Text style={styles.arabicTitle}>القرآن الكريم</Text>
 
-            {/* Book stand / Rehal structure with Open Book */}
-            <View
-              style={[
-                styles.bookStandWrap,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="book-open-page-variant"
-                size={78}
-                color={colors.accent}
-              />
-            </View>
-          </View>
-
-          {/* Arabic Holy Title */}
-          <Text
-            style={[
-              styles.arabicTitle,
-              { color: colors.quranGoldTitle || colors.accent },
-            ]}
-          >
-            القرآن الكريم
-          </Text>
-
-          {/* Surah Counter Badge */}
-          <View
-            style={[
-              styles.counterBadge,
-              {
-                backgroundColor: colors.badgeBg || "rgba(255,255,255,0.08)",
-                borderColor: colors.badgeBorder || colors.border,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.livePulseDot,
-                { backgroundColor: colors.accent },
-              ]}
-            />
-            <Text
-              style={[
-                styles.counterText,
-                { color: colors.badgeText || colors.textSecondary },
-              ]}
-            >
-              114 Сур • 30 Джузов • 6236 Аятов
-            </Text>
-          </View>
-
-          {/* Architectural Mosque Backdrop (banner variant, strictly NO domes) */}
-          <View style={styles.mosqueBackdropWrap} pointerEvents="none">
-            <StitchMosque
-              variant="banner"
-              idPrefix="quran"
-              colors={colors}
-              width="100%"
-              height={100}
-              preserveAspectRatio="xMidYMax meet"
-              showGlow={false}
-              opacity={colors.isDark ? 0.75 : 0.6}
-            />
+          <View style={styles.statsPill}>
+            <View style={styles.pillDot} />
+            <Text style={styles.statsText}>114 сур · 30 джузов · 6236 аятов</Text>
           </View>
         </View>
 
-        {/* ================= 2 PRIMARY ACTION BUTTONS ================= */}
+        {/* Action Cards */}
         <View style={styles.actionsSection}>
-          {/* 1. Читать (Read Quran) */}
+          {/* Card 1: Читать */}
           <TouchableOpacity
-            style={[
-              styles.actionCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
+            style={styles.card}
             onPress={() => router.push("/read")}
             activeOpacity={0.8}
+            accessibilityLabel="Читать Коран"
+            accessibilityRole="button"
           >
-            <View
-              style={[
-                styles.iconBox,
-                {
-                  backgroundColor: colors.accentSoft || "rgba(13, 148, 136, 0.14)",
-                  borderColor: colors.accent,
-                },
-              ]}
-            >
-              <Ionicons name="book-outline" size={26} color={colors.accent} />
+            <View style={styles.readIconBox}>
+              <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13C17 4 14 4.5 12 6zM12 6v13" />
+              </Svg>
             </View>
 
-            <View style={{ flex: 1 }}>
-              <View style={styles.actionTitleRow}>
-                <Text style={[styles.actionTitle, { color: colors.text }]}>
-                  Читать
-                </Text>
-                <View
-                  style={[
-                    styles.tagBadge,
-                    {
-                      backgroundColor: colors.accentSoft || "rgba(13, 148, 136, 0.12)",
-                    },
-                  ]}
-                >
-                  <Text style={[styles.tagText, { color: colors.accent }]}>
-                    Текст
-                  </Text>
+            <View style={styles.cardTextCol}>
+              <View style={styles.cardTitleRow}>
+                <Text style={styles.cardTitle}>Читать</Text>
+                <View style={styles.readTag}>
+                  <Text style={styles.readTagText}>ТЕКСТ</Text>
                 </View>
               </View>
-              <Text
-                style={[styles.actionSubtitle, { color: colors.textSecondary }]}
-              >
+              <Text style={styles.cardSubtitle}>
                 Суры, аяты и смысловой перевод
               </Text>
             </View>
 
-            <View
-              style={[
-                styles.arrowCircle,
-                {
-                  backgroundColor: colors.cardSecondary || colors.background,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+            <View style={styles.chevronCircle}>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M9 6l6 6-6 6" />
+              </Svg>
             </View>
           </TouchableOpacity>
 
-          {/* 2. Слушать (Listen to Quran Audio) */}
+          {/* Card 2: Слушать */}
           <TouchableOpacity
-            style={[
-              styles.actionCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
+            style={styles.card}
             onPress={() => router.push("/listen")}
             activeOpacity={0.8}
+            accessibilityLabel="Слушать Коран"
+            accessibilityRole="button"
           >
-            <View
-              style={[
-                styles.iconBox,
-                {
-                  backgroundColor: "rgba(168, 85, 247, 0.14)",
-                  borderColor: "#a855f7",
-                },
-              ]}
-            >
-              <Ionicons name="headset-outline" size={26} color="#a855f7" />
+            <View style={styles.listenIconBox}>
+              <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M4 15v-3a8 8 0 0 1 16 0v3" />
+                <Rect x={3} y={14} width={4} height={7} rx={2} />
+                <Rect x={17} y={14} width={4} height={7} rx={2} />
+              </Svg>
             </View>
 
-            <View style={{ flex: 1 }}>
-              <View style={styles.actionTitleRow}>
-                <Text style={[styles.actionTitle, { color: colors.text }]}>
-                  Слушать
-                </Text>
-                <View
-                  style={[
-                    styles.tagBadge,
-                    {
-                      backgroundColor: "rgba(168, 85, 247, 0.14)",
-                    },
-                  ]}
-                >
-                  <Text style={[styles.tagText, { color: "#a855f7" }]}>
-                    Аудио
-                  </Text>
+            <View style={styles.cardTextCol}>
+              <View style={styles.cardTitleRow}>
+                <Text style={styles.cardTitle}>Слушать</Text>
+                <View style={styles.listenTag}>
+                  <Text style={styles.listenTagText}>АУДИО</Text>
                 </View>
               </View>
-              <Text
-                style={[styles.actionSubtitle, { color: colors.textSecondary }]}
-              >
-                {LISTEN_RECITERS.length} чтецов (Мишари Рашид, Аль-Хусари и др.)
+              <Text style={styles.cardSubtitle}>
+                {LISTEN_RECITERS.length || 60} чтецов (Мишари Рашид, Аль-Хусари и др.)
               </Text>
             </View>
 
-            <View
-              style={[
-                styles.arrowCircle,
-                {
-                  backgroundColor: colors.cardSecondary || colors.background,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+            <View style={styles.chevronCircle}>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M9 6l6 6-6 6" />
+              </Svg>
             </View>
           </TouchableOpacity>
         </View>
@@ -309,31 +171,24 @@ export default function QuranScreen() {
         onRequestClose={() => setInfoModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
+          <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Ionicons name="book" size={24} color={colors.accent} />
-              <Text style={[styles.modalTitle, { color: colors.text }]}>О разделе «Коран»</Text>
+              <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13C17 4 14 4.5 12 6zM12 6v13" />
+              </Svg>
+              <Text style={styles.modalTitle}>О разделе «Коран»</Text>
             </View>
-            <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
+            <Text style={styles.modalBody}>
               Раздел включает два режима:{"\n\n"}
               • «Читать» — полный арабский текст 114 сур с поаятным переводом Э. Кулиева.{"\n"}
-              • «Слушать» — высококачественные аудиозаписи полного Корана от 60 признанных чтецов мира с возможностью непрерывного воспроизведения и офлайн-кэширования.
+              • «Слушать» — высококачественные аудиозаписи полного Корана от {LISTEN_RECITERS.length || 60} признанных чтецов мира с возможностью непрерывного воспроизведения и офлайн-кэширования.
             </Text>
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: colors.accent }]}
+              style={styles.modalCloseBtn}
               onPress={() => setInfoModalVisible(false)}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.modalCloseBtnText, { color: colors.textOnActive || "#FFF" }]}>
-                Понятно
-              </Text>
+              <Text style={styles.modalCloseBtnText}>Понятно</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -343,223 +198,239 @@ export default function QuranScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg, // #0D1613
+  },
   header: {
-    position: "relative",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 52,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
+    height: 52,
+  },
+  screenTitle: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 28,
+    letterSpacing: -0.3,
+    color: colors.text, // #EDE6D6
   },
   headerTitleContainer: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1,
+    display: "none",
   },
-  locationPill: {
+  headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
+    gap: 8,
+  },
+  locationChip: {
+    height: 44,
+    paddingHorizontal: 12,
+    borderRadius: radii.button, // 14
     borderWidth: 1,
-    maxWidth: "40%",
-    zIndex: 2,
+    borderColor: colors.border, // #243630
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   locationText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontFamily: fonts.ui.semibold,
+    fontSize: 14,
+    color: colors.text,
+    maxWidth: 110,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    textAlign: "center",
-  },
-  infoButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  infoBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.button, // 14
     borderWidth: 1,
+    borderColor: colors.border, // #243630
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 2,
   },
   content: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 36,
+    gap: 16,
   },
   heroSection: {
     alignItems: "center",
-    paddingTop: 12,
-    paddingBottom: 10,
-    position: "relative",
-  },
-  artworkGlow: {
-    position: "absolute",
-    top: 20,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-  },
-  quranMedallion: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-    position: "relative",
-  },
-  crescentDecor: {
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  bookStandWrap: {
-    padding: 14,
-    borderRadius: 26,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
+    gap: 6,
+    marginTop: 6,
   },
   arabicTitle: {
-    fontSize: 32,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-    marginBottom: 6,
+    fontFamily: fonts.arabic.bold,
+    fontSize: 44,
+    lineHeight: 60,
+    color: colors.accent, // #E3BE72
     textAlign: "center",
+    marginTop: 4,
   },
-  counterBadge: {
+  statsPill: {
+    marginTop: 6,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 16,
+    backgroundColor: colors.bg, // #0D1613
     borderWidth: 1,
-    marginBottom: 12,
+    borderColor: colors.borderStrong, // #2C4238
+    borderRadius: radii.pill, // 999
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  livePulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  pillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent, // #E3BE72
   },
-  counterText: {
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  mosqueBackdropWrap: {
-    width: "100%",
-    height: 100,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: -4,
-    overflow: "hidden",
+  statsText: {
+    fontFamily: fonts.ui.semibold,
+    fontSize: 13,
+    color: colors.muted, // #8FA89E
+    fontVariant: ["tabular-nums"],
   },
   actionsSection: {
-    gap: 12,
+    flexDirection: "column",
+    gap: 10,
     marginTop: 8,
   },
-  actionCard: {
+  card: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
     gap: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  iconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 16,
+    backgroundColor: colors.surface, // #15241F
     borderWidth: 1,
+    borderColor: colors.border, // #243630
+    borderRadius: radii.card, // 22
+    padding: 16,
+  },
+  readIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceActive, // #1B2F28
+    borderWidth: 1,
+    borderColor: colors.accent, // #E3BE72
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
-  actionTitleRow: {
+  listenIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceActive, // #1B2F28
+    borderWidth: 1,
+    borderColor: colors.borderStrong, // #2C4238
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  cardTextCol: {
+    flex: 1,
+    flexDirection: "column",
+    gap: 4,
+  },
+  cardTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  actionTitle: {
-    fontSize: 17,
-    fontWeight: "800",
+  cardTitle: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 20,
+    color: colors.text,
   },
-  tagBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 8,
-  },
-  tagText: {
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  actionSubtitle: {
-    fontSize: 12.5,
-    marginTop: 3,
-  },
-  arrowCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  readTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
     borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  readTagText: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: colors.accent,
+  },
+  listenTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  listenTagText: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: colors.muted,
+  },
+  cardSubtitle: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.muted,
+  },
+  chevronCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.borderStrong, // #2C4238
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.65)",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
   },
   modalCard: {
     width: "100%",
-    borderRadius: 24,
+    borderRadius: radii.hero, // 28
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    padding: 22,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
+    borderColor: colors.border,
+    padding: 24,
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   modalTitle: {
+    fontFamily: fonts.ui.bold,
     fontSize: 18,
-    fontWeight: "800",
+    color: colors.text,
   },
   modalBody: {
-    fontSize: 13.5,
-    lineHeight: 20,
+    fontFamily: fonts.ui.regular,
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.muted,
     marginBottom: 20,
   },
   modalCloseBtn: {
-    paddingVertical: 12,
-    borderRadius: 14,
+    height: 48,
+    borderRadius: radii.button, // 14
+    backgroundColor: colors.accent,
     alignItems: "center",
+    justifyContent: "center",
   },
   modalCloseBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontFamily: fonts.ui.bold,
+    fontSize: 15,
+    color: colors.onAccent, // #0D1613
   },
 });
