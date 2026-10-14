@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   pill: {
     position: "absolute",
     left: 22,
-    bottom: 16, // целиком внутри карточки с отступом 16 px от низа
+    bottom: 10, // целиком внутри карточки с отступом 10 px от низа
     backgroundColor: colors.bg, // #0D1613
     borderWidth: 1,
     borderColor: colors.borderStrong, // #2C4238
