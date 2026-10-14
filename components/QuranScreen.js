@@ -8,11 +8,13 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Path, Circle, Rect, G } from "react-native-svg";
+import Svg, { Path, Rect, G } from "react-native-svg";
 import { useRouter } from "expo-router";
 import { colors, radii, fonts } from "../theme/theme";
 import { useAppData } from "../utils/AppDataContext";
 import { LISTEN_RECITERS } from "../services/quranSurahAudioRegistry";
+import SectionHeader from "./ui/SectionHeader";
+import Pill from "./ui/Pill";
 import StitchMosque from "./StitchMosque";
 
 export default function QuranScreen() {
@@ -25,47 +27,15 @@ export default function QuranScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       {/* Top Header */}
-      <View style={styles.header}>
-        <Text style={styles.screenTitle}>Коран</Text>
-
-        {/* Dummy container for test compatibility */}
+      <View style={styles.headerWrap}>
+        <SectionHeader
+          title="Коран"
+          cityName={cityName}
+          onCityPress={() => router.push("/location")}
+          onInfoPress={() => setInfoModalVisible(true)}
+        />
+        {/* Compatibility with test suite */}
         <View style={styles.headerTitleContainer} pointerEvents="none" />
-
-        <View style={styles.headerRight}>
-          {/* City / Location Chip */}
-          <TouchableOpacity
-            style={styles.locationChip}
-            onPress={() => router.push("/location")}
-            activeOpacity={0.7}
-            accessibilityLabel="Выбрать город"
-            accessibilityRole="button"
-          >
-            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <Path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z" />
-              <Circle cx={12} cy={9.5} r={2.5} />
-            </Svg>
-            <Text style={styles.locationText} numberOfLines={1}>
-              {cityName}
-            </Text>
-            <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <Path d="M6 9l6 6 6-6" />
-            </Svg>
-          </TouchableOpacity>
-
-          {/* Info Button */}
-          <TouchableOpacity
-            style={styles.infoBtn}
-            onPress={() => setInfoModalVisible(true)}
-            activeOpacity={0.7}
-            accessibilityLabel="О разделе"
-            accessibilityRole="button"
-          >
-            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-              <Circle cx={12} cy={12} r={9} />
-              <Path d="M12 11v5M12 8v.01" />
-            </Svg>
-          </TouchableOpacity>
-        </View>
       </View>
 
       <ScrollView
@@ -85,10 +55,9 @@ export default function QuranScreen() {
 
           <Text style={styles.arabicTitle}>القرآن الكريم</Text>
 
-          <View style={styles.statsPill}>
-            <View style={styles.pillDot} />
+          <Pill blink={true} style={styles.statsPill}>
             <Text style={styles.statsText}>114 сур · 30 джузов · 6236 аятов</Text>
-          </View>
+          </Pill>
         </View>
 
         {/* Action Cards */}
@@ -101,7 +70,7 @@ export default function QuranScreen() {
             accessibilityLabel="Читать Коран"
             accessibilityRole="button"
           >
-            <View style={styles.readIconBox}>
+            <View style={styles.iconBox}>
               <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13C17 4 14 4.5 12 6zM12 6v13" />
               </Svg>
@@ -110,8 +79,8 @@ export default function QuranScreen() {
             <View style={styles.cardTextCol}>
               <View style={styles.cardTitleRow}>
                 <Text style={styles.cardTitle}>Читать</Text>
-                <View style={styles.readTag}>
-                  <Text style={styles.readTagText}>ТЕКСТ</Text>
+                <View style={styles.tag}>
+                  <Text style={styles.tagText}>ТЕКСТ</Text>
                 </View>
               </View>
               <Text style={styles.cardSubtitle}>
@@ -126,7 +95,7 @@ export default function QuranScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Card 2: Слушать */}
+          {/* Card 2: Слушать (golden like Читать) */}
           <TouchableOpacity
             style={styles.card}
             onPress={() => router.push("/listen")}
@@ -134,8 +103,8 @@ export default function QuranScreen() {
             accessibilityLabel="Слушать Коран"
             accessibilityRole="button"
           >
-            <View style={styles.listenIconBox}>
-              <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <View style={styles.iconBox}>
+              <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="M4 15v-3a8 8 0 0 1 16 0v3" />
                 <Rect x={3} y={14} width={4} height={7} rx={2} />
                 <Rect x={17} y={14} width={4} height={7} rx={2} />
@@ -145,8 +114,8 @@ export default function QuranScreen() {
             <View style={styles.cardTextCol}>
               <View style={styles.cardTitleRow}>
                 <Text style={styles.cardTitle}>Слушать</Text>
-                <View style={styles.listenTag}>
-                  <Text style={styles.listenTagText}>АУДИО</Text>
+                <View style={styles.tag}>
+                  <Text style={styles.tagText}>АУДИО</Text>
                 </View>
               </View>
               <Text style={styles.cardSubtitle}>
@@ -202,53 +171,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg, // #0D1613
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  headerWrap: {
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 4,
-    height: 52,
-  },
-  screenTitle: {
-    fontFamily: fonts.ui.bold,
-    fontSize: 28,
-    letterSpacing: -0.3,
-    color: colors.text, // #EDE6D6
   },
   headerTitleContainer: {
     display: "none",
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  locationChip: {
-    height: 44,
-    paddingHorizontal: 12,
-    borderRadius: radii.button, // 14
-    borderWidth: 1,
-    borderColor: colors.border, // #243630
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  locationText: {
-    fontFamily: fonts.ui.semibold,
-    fontSize: 14,
-    color: colors.text,
-    maxWidth: 110,
-  },
-  infoBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.button, // 14
-    borderWidth: 1,
-    borderColor: colors.border, // #243630
-    alignItems: "center",
-    justifyContent: "center",
   },
   content: {
     paddingHorizontal: 20,
@@ -264,32 +193,20 @@ const styles = StyleSheet.create({
   arabicTitle: {
     fontFamily: fonts.arabic.bold,
     fontSize: 44,
-    lineHeight: 60,
+    lineHeight: 76,
+    paddingBottom: 8,
     color: colors.accent, // #E3BE72
     textAlign: "center",
     marginTop: 4,
   },
   statsPill: {
     marginTop: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.bg, // #0D1613
-    borderWidth: 1,
-    borderColor: colors.borderStrong, // #2C4238
-    borderRadius: radii.pill, // 999
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  pillDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.accent, // #E3BE72
+    alignSelf: "center",
   },
   statsText: {
     fontFamily: fonts.ui.semibold,
     fontSize: 13,
+    lineHeight: 18,
     color: colors.muted, // #8FA89E
     fontVariant: ["tabular-nums"],
   },
@@ -309,24 +226,13 @@ const styles = StyleSheet.create({
     borderRadius: radii.card, // 22
     padding: 16,
   },
-  readIconBox: {
+  iconBox: {
     width: 56,
     height: 56,
     borderRadius: 16,
     backgroundColor: colors.surfaceActive, // #1B2F28
     borderWidth: 1,
     borderColor: colors.accent, // #E3BE72
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  listenIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceActive, // #1B2F28
-    borderWidth: 1,
-    borderColor: colors.borderStrong, // #2C4238
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -344,33 +250,22 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontFamily: fonts.ui.bold,
     fontSize: 20,
+    lineHeight: 26,
     color: colors.text,
   },
-  readTag: {
+  tag: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.accent,
   },
-  readTagText: {
+  tagText: {
     fontFamily: fonts.ui.bold,
     fontSize: 11,
+    lineHeight: 14,
     letterSpacing: 0.5,
     color: colors.accent,
-  },
-  listenTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  listenTagText: {
-    fontFamily: fonts.ui.bold,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    color: colors.muted,
   },
   cardSubtitle: {
     fontFamily: fonts.ui.regular,
@@ -412,6 +307,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontFamily: fonts.ui.bold,
     fontSize: 18,
+    lineHeight: 24,
     color: colors.text,
   },
   modalBody: {
@@ -431,6 +327,7 @@ const styles = StyleSheet.create({
   modalCloseBtnText: {
     fontFamily: fonts.ui.bold,
     fontSize: 15,
+    lineHeight: 20,
     color: colors.onAccent, // #0D1613
   },
 });

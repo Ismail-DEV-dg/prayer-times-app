@@ -9,16 +9,17 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
+import Svg, { Path, Circle } from "react-native-svg";
 import { useRouter } from "expo-router";
-import { useTheme } from "../theme/ThemeContext";
+import { colors, radii, fonts } from "../theme/theme";
 import { useAppData } from "../utils/AppDataContext";
 import { fetchSurahList } from "../services/quranApi";
+import SectionHeader from "../components/ui/SectionHeader";
 
 // Surah list for the READ mode. Text comes from verified sources (primary + fallback).
 // On failure an honest error is shown.
 export default function ReadScreen() {
-  const { colors } = useTheme();
   const { selectedCity } = useAppData();
   const router = useRouter();
 
@@ -27,6 +28,8 @@ export default function ReadScreen() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [activeSurahNumber, setActiveSurahNumber] = useState(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -56,7 +59,7 @@ export default function ReadScreen() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [selectedCity]);
 
   useEffect(() => {
     load();
@@ -73,28 +76,6 @@ export default function ReadScreen() {
     );
   });
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.surahRow, { backgroundColor: colors.card, borderColor: colors.border }]}
-      onPress={() => router.push(`/surah/${item.number}`)}
-    >
-      <View style={[styles.numberBadge, { backgroundColor: colors.accentSoft }]}>
-        <Text style={[styles.numberText, { color: colors.accent }]}>{item.number}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.englishName, { color: colors.text }]} numberOfLines={1}>
-          {item.englishName}
-        </Text>
-        <Text style={[styles.translation, { color: colors.textSecondary }]} numberOfLines={1}>
-          {item.englishNameTranslation} · {item.numberOfAyahs} аятов
-        </Text>
-      </View>
-      <Text style={[styles.arabicName, { color: colors.text }]} numberOfLines={1}>
-        {item.name}
-      </Text>
-    </TouchableOpacity>
-  );
-
   // Back guard: never trigger an unhandled GO_BACK; fall back to Quran.
   const goBack = () => {
     if (router.canGoBack()) {
@@ -104,32 +85,87 @@ export default function ReadScreen() {
     }
   };
 
+  const renderItem = ({ item }) => {
+    const isActive = activeSurahNumber === item.number;
+
+    return (
+      <TouchableOpacity
+        style={[styles.surahRow, isActive && styles.surahRowActive]}
+        onPress={() => router.push(`/surah/${item.number}`)}
+        onPressIn={() => setActiveSurahNumber(item.number)}
+        onPressOut={() => setActiveSurahNumber(null)}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.number}. ${item.englishName}, ${item.numberOfAyahs} аятов`}
+      >
+        <View style={styles.numberBadge}>
+          <Text style={styles.numberText}>{item.number}</Text>
+        </View>
+
+        <View style={styles.middleCol}>
+          <Text style={styles.englishName} numberOfLines={1}>
+            {item.englishName}
+          </Text>
+          <Text style={styles.translation} numberOfLines={1}>
+            {item.englishNameTranslation} · {item.numberOfAyahs} аятов
+          </Text>
+        </View>
+
+        <Text style={styles.arabicName} numberOfLines={1}>
+          {item.name}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Читать</Text>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <StatusBar style="light" />
+
+      {/* Header */}
+      <View style={styles.headerWrap}>
+        <SectionHeader
+          title="Читать"
+          fontSize={24}
+          lineHeight={32}
+          onBackPress={goBack}
+        />
       </View>
 
-      <View style={[styles.searchWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Ionicons name="search" size={18} color={colors.textSecondary} />
+      {/* Search Input */}
+      <View
+        style={[
+          styles.searchWrap,
+          isSearchFocused && styles.searchWrapFocused,
+        ]}
+      >
+        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <Circle cx={11} cy={11} r={8} />
+          <Path d="m21 21-4.3-4.3" />
+        </Svg>
         <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
+          style={styles.searchInput}
           placeholder="Номер или название суры…"
-          placeholderTextColor={colors.textSecondary}
+          placeholderTextColor={colors.muted}
           value={query}
           onChangeText={setQuery}
           autoCorrect={false}
+          cursorColor={colors.accent}
+          selectionColor={colors.accent}
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={() => setIsSearchFocused(false)}
         />
         {query.length > 0 && (
           <TouchableOpacity
             onPress={() => setQuery("")}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityLabel="Очистить поиск"
+            accessibilityRole="button"
           >
-            <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Circle cx={12} cy={12} r={9} />
+              <Path d="m15 9-6 6M9 9l6 6" />
+            </Svg>
           </TouchableOpacity>
         )}
       </View>
@@ -137,34 +173,33 @@ export default function ReadScreen() {
       {loading && !surahs ? (
         <View style={[styles.center, { flex: 1 }]}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={[styles.muted, { color: colors.textSecondary, marginTop: 12 }]}>
-            Загружаем список сур…
-          </Text>
+          <Text style={styles.loadingText}>Загружаем список сур…</Text>
         </View>
       ) : error ? (
         <View style={[styles.center, { flex: 1, paddingHorizontal: 32 }]}>
-          <Ionicons name="cloud-offline-outline" size={32} color={colors.textSecondary} />
-          <Text style={[styles.errorText, { color: colors.text, textAlign: "center" }]}>
-            {error}
-          </Text>
+          <Svg width={36} height={36} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-15.08 3.52M2 2l20 20M6.3 6.3a8 8 0 0 0-4.56 7.22 5 5 0 0 0 5 5h11.44" />
+          </Svg>
+          <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.accent }]}
+            style={styles.retryButton}
             onPress={load}
+            activeOpacity={0.8}
+            accessibilityRole="button"
           >
-            <Text style={{ color: colors.textOnActive, fontWeight: "700" }}>Повторить</Text>
+            <Text style={styles.retryButtonText}>Повторить</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={(s) => String(s.number)}
-          contentContainerStyle={{ padding: 16, gap: 8 }}
+          contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
           renderItem={renderItem}
           ListEmptyComponent={
-            <Text style={{ color: colors.textSecondary, textAlign: "center", marginTop: 20 }}>
-              Ничего не найдено
-            </Text>
+            <Text style={styles.emptyText}>Ничего не найдено</Text>
           }
         />
       )}
@@ -173,42 +208,139 @@ export default function ReadScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16 },
-  title: { fontSize: 20, fontWeight: "800" },
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg, // #0D1613
+  },
+  headerWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
   searchWrap: {
+    height: 52,
+    borderRadius: radii.row, // 18
+    backgroundColor: colors.surface, // #15241F
+    borderWidth: 1,
+    borderColor: colors.border, // #243630
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 14,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    gap: 10,
+    paddingHorizontal: 16,
+    marginHorizontal: 20,
+    marginBottom: 12,
   },
-  searchInput: { flex: 1, fontSize: 15, paddingVertical: 4 },
-  center: { alignItems: "center", justifyContent: "center" },
-  muted: { fontSize: 14 },
-  errorText: { fontSize: 15, lineHeight: 21, marginTop: 8, textAlign: "center" },
-  retryButton: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12 },
+  searchWrapFocused: {
+    borderColor: colors.accent, // #E3BE72
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.ui.regular,
+    fontSize: 16,
+    lineHeight: 20,
+    color: colors.text, // #EDE6D6
+    paddingVertical: 4,
+  },
+  listContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    gap: 8,
+  },
   surahRow: {
+    height: 76,
+    borderRadius: radii.row, // 18
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.borderSoft, // #1E2E28
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
+  },
+  surahRowActive: {
+    backgroundColor: colors.surfaceActive, // #1B2F28
+    borderColor: colors.accent, // #E3BE72
   },
   numberBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: radii.iconBox, // 12
+    backgroundColor: colors.surfaceActive, // #1B2F28
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  numberText: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.accent, // #E3BE72
+    fontVariant: ["tabular-nums"],
+  },
+  middleCol: {
+    flex: 1,
+    justifyContent: "center",
+    gap: 2,
+    marginRight: 8,
+  },
+  englishName: {
+    fontFamily: fonts.ui.semibold,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.text, // #EDE6D6
+  },
+  translation: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.muted, // #8FA89E
+  },
+  arabicName: {
+    fontFamily: fonts.arabic.bold,
+    fontSize: 24,
+    lineHeight: 40,
+    color: colors.text, // #EDE6D6
+    textAlign: "right",
+  },
+  center: {
     alignItems: "center",
     justifyContent: "center",
   },
-  numberText: { fontSize: 15, fontWeight: "800" },
-  englishName: { fontSize: 15, fontWeight: "700" },
-  translation: { fontSize: 12, marginTop: 2 },
-  arabicName: { fontSize: 17, maxWidth: 110 },
+  loadingText: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.muted,
+    marginTop: 12,
+  },
+  errorText: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    color: colors.text,
+    textAlign: "center",
+    marginTop: 12,
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    height: 44,
+    borderRadius: radii.button,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  retryButtonText: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 15,
+    color: colors.onAccent,
+  },
+  emptyText: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.muted,
+    textAlign: "center",
+    marginTop: 24,
+  },
 });

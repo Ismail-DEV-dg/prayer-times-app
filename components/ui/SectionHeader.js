@@ -5,17 +5,47 @@ import { colors, radii, fonts } from '../../theme/theme';
 
 export default function SectionHeader({
   title,
+  fontSize = 28,
+  lineHeight,
+  onBackPress,
+  backAccessibilityLabel = 'Назад',
   cityName = 'Дербент',
   onCityPress,
   onInfoPress,
   infoAccessibilityLabel = 'О разделе',
   style,
+  titleStyle,
 }) {
+  const calculatedLineHeight = lineHeight || (fontSize <= 24 ? 32 : 36);
+
   return (
     <View style={[styles.container, style]}>
-      <Text style={styles.title} numberOfLines={1}>
-        {title}
-      </Text>
+      <View style={styles.leftGroup}>
+        {onBackPress ? (
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={onBackPress}
+            activeOpacity={0.7}
+            accessibilityLabel={backAccessibilityLabel}
+            accessibilityRole="button"
+          >
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M19 12H5M12 19l-7-7 7-7" />
+            </Svg>
+          </TouchableOpacity>
+        ) : null}
+
+        <Text
+          style={[
+            styles.title,
+            { fontSize, lineHeight: calculatedLineHeight },
+            titleStyle,
+          ]}
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+      </View>
 
       <View style={styles.actions}>
         {onCityPress ? (
@@ -60,14 +90,29 @@ export default function SectionHeader({
 
 const styles = StyleSheet.create({
   container: {
-    height: 44,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  leftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.button,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     fontFamily: fonts.ui.bold,
     fontSize: 28,
+    lineHeight: 36,
     color: colors.text,
     letterSpacing: -0.3,
   },
@@ -89,6 +134,7 @@ const styles = StyleSheet.create({
   cityText: {
     fontFamily: fonts.ui.semibold,
     fontSize: 14,
+    lineHeight: 18,
     color: colors.text,
   },
   infoBtn: {

@@ -11,9 +11,11 @@ import {
   PanResponder,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
+import Svg, { Path, Circle, Rect } from "react-native-svg";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAppTheme } from "../../theme/ThemeContext";
+import { colors, radii, fonts } from "../../theme/theme";
 import { fetchSurahList } from "../../services/quranApi";
 import {
   getListenReciter as getSavedListenReciter,
@@ -28,16 +30,13 @@ import {
   getSurahAudioFallbackUrl,
 } from "../../services/quranSurahAudioRegistry";
 import { useSurahAudio } from "../../hooks/useSurahAudio";
+import SectionHeader from "../../components/ui/SectionHeader";
 
 // FULL-SURAH Listen player. ONE SURAH = ONE CONTINUOUS TRACK: a single
 // Sound loads the entire surah ({server}/NNN.mp3), so the progress bar,
-// seek, Play/Pause and didJustFinish all refer to the whole surah
-// (Al-Kahf shows ~61:47, not 5 seconds of one ayah). Previous/Next move
-// between SURAHS; didJustFinish auto-advances to the next surah and
-// keeps playing. The reading mode (useAyahAudio, per-ayah EveryAyah) is
-// a completely separate screen and is not touched here.
+// seek, Play/Pause and didJustFinish all refer to the whole surah.
 export default function ListenPlayerScreen() {
-  const { colors } = useAppTheme();
+  const { colors: _themeColors } = useAppTheme();
   const router = useRouter();
   const params = useLocalSearchParams();
 
@@ -46,6 +45,7 @@ export default function ListenPlayerScreen() {
   const [surahNumber, setSurahNumber] = useState(1);
   const [surahPickerOpen, setSurahPickerOpen] = useState(false);
   const [surahQuery, setSurahQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [loadingMeta, setLoadingMeta] = useState(true);
 
   const audio = useSurahAudio();
@@ -58,21 +58,20 @@ export default function ListenPlayerScreen() {
   );
 
   // --- mount: reciter + saved position + surah list --------------------
+  const resumeMsRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // reciter: URL param (picker handoff) -> saved -> default
       let id = typeof params.reciter === "string" ? params.reciter : null;
       if (!id || !getListenReciter(id)) {
         id = (await getSavedListenReciter()) || DEFAULT_LISTEN_RECITER;
       }
       if (!getListenReciter(id)) id = DEFAULT_LISTEN_RECITER;
-      // position: URL params (entry handoff) -> saved position -> 1
+
       let s = Number(params.surah);
       let resumeMs = 0;
       const pos = await getListenPosition();
       if (!Number.isInteger(s) || s < 1 || s > 114) {
-        // no surah in params: resume the saved position (or surah 1)
         if (pos) {
           s = pos.surah;
           resumeMs = pos.ms || 0;
@@ -80,9 +79,6 @@ export default function ListenPlayerScreen() {
           s = 1;
         }
       } else if (pos && pos.surah === s) {
-        // surah given via params (entry handoff): if the saved position
-        // belongs to the SAME surah, resume its offset; otherwise start
-        // from the beginning (reciter change / picker selection).
         resumeMs = pos.ms || 0;
       }
       if (!Number.isInteger(s) || s < 1 || s > 114) s = 1;
@@ -94,7 +90,6 @@ export default function ListenPlayerScreen() {
         const list = await fetchSurahList();
         if (!cancelled) setSurahs(list);
       } catch (e) {
-        // The player can still work without names (numbers only).
         if (!cancelled) setSurahs([]);
       } finally {
         if (!cancelled) setLoadingMeta(false);
@@ -103,111 +98,105 @@ export default function ListenPlayerScreen() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [params.reciter, params.surah]);
 
-  // resume offset captured on mount (from the saved position)
-  const resumeMsRef = useRef(0);
-
-  // --- persist the reciter choice --------------------------------------
+  // persist the active reciter whenever it changes
   useEffect(() => {
-    if (reciterId) saveListenReciter(reciterId).catch(() => {});
+    if (reciterId) saveListenReciter(reciterId);
   }, [reciterId]);
 
-  // --- load the full surah track whenever reciter/surah change ----------
-  // Also the initial load (plays the saved surah from the saved offset).
-  const loadSurah = useCallback(
-    (s, startMs = 0) => {
-      if (!reciterId) return;
-      const primary = getSurahAudioUrl(reciterId, s);
-      const fallback = getSurahAudioFallbackUrl(reciterId, s);
-      if (!primary) return;
-      audio.load(primary, `${reciterId}/${s}`, fallback, startMs).catch(() => {});
-    },
-    [reciterId, audio]
-  );
+  // Auto-play / load when reciter or surah changes
+  const lastKeyRef = useRef(null);
+  useEffect(() => {
+    if (!reciterId || !surahNumber) return;
+    const key = `${reciterId}/${surahNumber}`;
+    if (lastKeyRef.current === key) return;
+    lastKeyRef.current = key;
+
+    const primaryUrl = getSurahAudioUrl(reciterId, surahNumber);
+    const fallbackUrl = getSurahAudioFallbackUrl(reciterId, surahNumber);
+    if (!primaryUrl) return;
+
+    const initialOffset = resumeMsRef.current;
+    resumeMsRef.current = 0;
+
+    audio
+      .loadTrack({
+        key,
+        primaryUrl,
+        fallbackUrl,
+        autoPlay: true,
+        initialPositionMillis: initialOffset,
+      })
+      .catch((err) => {
+        console.warn("[ListenPlayer] loadTrack error:", err?.message || err);
+      });
+  }, [reciterId, surahNumber, audio]);
+
+  // Handle track finished -> next surah
+  const onTrackFinished = useCallback(() => {
+    if (surahNumber < 114) {
+      setSurahNumber((n) => n + 1);
+    }
+  }, [surahNumber]);
 
   useEffect(() => {
-    if (!reciterId || loadingMeta) return; // wait for the entry setup
-    loadSurah(surahNumber, resumeMsRef.current);
-    resumeMsRef.current = 0; // resume offset only applies once
-    // loadingMeta flips once (true -> false) after the metadata setup and
-    // triggers the FIRST load; later runs fire on reciter/surah changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reciterId, surahNumber, loadingMeta]);
+    if (audio.didJustFinish) {
+      onTrackFinished();
+    }
+  }, [audio.didJustFinish, onTrackFinished]);
 
-  // --- persist the last position (surah + track offset) ------------------
-  // The audio hook streams position updates; throttled saves every ~5s
-  // and on pause/surah change keep the storage writes cheap.
-  const lastSaveRef = useRef(0);
+  // Periodically persist playback position
+  const lastSavedPosRef = useRef(0);
   useEffect(() => {
-    if (!reciterId || audio.status === "idle" || audio.status === "error") return;
-    const now = Date.now();
-    if (now - lastSaveRef.current < 5000 && audio.status !== "paused") return;
-    lastSaveRef.current = now;
-    saveListenPosition(surahNumber, audio.positionMillis).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surahNumber, reciterId, audio.positionMillis, audio.status]);
-
-  // --- auto-advance on REAL didJustFinish of the whole surah ------------
-  // audio.setOnFinish fires only from the status callback of the CURRENT
-  // sound with didJustFinish === true (see useSurahAudio). On the last
-  // surah (114) playback simply stops — no wrap-around.
-  const onFinishRef = useRef(null);
-  useEffect(() => {
-    onFinishRef.current = (key) => {
-      if (key !== `${reciterId}/${surahNumber}`) return;
-      if (surahNumber >= 114) return; // last surah: honest stop
-      setSurahNumber((s) => Math.min(114, s + 1)); // loads+plays via effect
-    };
-  });
-  useEffect(() => {
-    audio.setOnFinish((key) => {
-      if (onFinishRef.current) onFinishRef.current(key);
-    });
-  });
-
-  // --- controls ----------------------------------------------------------
-  const onPlayPause = () => {
-    audio.playPause().catch(() => {});
-  };
-
-  // Previous/Next = previous/next SURAHS (not ayahs).
-  const onPrev = () => {
-    setSurahNumber((s) => Math.max(1, s - 1));
-  };
-  const onNext = () => {
-    setSurahNumber((s) => Math.min(114, s + 1));
-  };
-
-  const onStop = () => {
-    audio.unload().catch(() => {});
-  };
-
-  const onChangeReciter = () => {
-    // Stop the current sound before leaving — the old reciter must not
-    // keep playing while the user browses the picker.
-    audio.unload().catch(() => {});
-    router.push("/listen/reciter");
-  };
-
-  // Surah picker: search by number / english name / translation / arabic.
-  const filteredSurahs = useMemo(() => {
-    const q = surahQuery.trim().toLowerCase();
-    if (!q) return surahs || [];
-    return (surahs || []).filter(
-      (s) =>
-        String(s.number) === q ||
-        s.englishName.toLowerCase().includes(q) ||
-        (s.englishNameTranslation || "").toLowerCase().includes(q) ||
-        (s.name || "").includes(surahQuery.trim())
-    );
-  }, [surahs, surahQuery]);
+    if (audio.status !== "playing" && audio.status !== "paused") return;
+    const pos = audio.positionMillis || 0;
+    if (Math.abs(pos - lastSavedPosRef.current) > 4000) {
+      lastSavedPosRef.current = pos;
+      saveListenPosition(surahNumber, pos);
+    }
+  }, [audio.status, audio.positionMillis, surahNumber]);
 
   const reciter = reciterId ? getListenReciter(reciterId) : null;
 
+  const onPrev = () => {
+    if (surahNumber > 1) {
+      saveListenPosition(surahNumber, 0);
+      setSurahNumber((n) => n - 1);
+    }
+  };
+
+  const onNext = () => {
+    if (surahNumber < 114) {
+      saveListenPosition(surahNumber, 0);
+      setSurahNumber((n) => n + 1);
+    }
+  };
+
+  const onPlayPause = () => {
+    if (audio.status === "playing") {
+      audio.pause();
+    } else if (audio.status === "paused") {
+      audio.play();
+    } else if (audio.status === "idle" || audio.status === "error") {
+      const primaryUrl = getSurahAudioUrl(reciterId, surahNumber);
+      const fallbackUrl = getSurahAudioFallbackUrl(reciterId, surahNumber);
+      if (primaryUrl) {
+        audio.loadTrack({
+          key: currentKey,
+          primaryUrl,
+          fallbackUrl,
+          autoPlay: true,
+        });
+      }
+    }
+  };
+
+  const onChangeReciter = () => {
+    router.push("/listen/reciter");
+  };
+
   const goBackSafely = () => {
-    audio.unload().catch(() => {});
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -215,34 +204,20 @@ export default function ListenPlayerScreen() {
     }
   };
 
-  // --- seek bar (drag over the whole surah track) -------------------------
-  // We track the bar's on-screen X position (pageX from onLayout) so that
-  // during a drag we can compute:
-  //   ratio = (gestureState.moveX - barPageX) / barWidth
-  // This is reliable even when the touch wanders outside the bar view.
-  // Using evt.nativeEvent.locationX in onPanResponderMove is NOT reliable
-  // because the event coordinate origin can shift mid-gesture on Android.
-  const barWidthRef = useRef(1);
-  const barPageXRef = useRef(0);   // absolute screen X of the bar's left edge
-  const durationRef = useRef(0);   // read at gesture time, avoids stale closure
+  // --- Seek Bar PanResponder ---------------------------------------------
+  const [seekPreview, setSeekPreview] = useState(null);
   const seekPreviewRef = useRef(null);
   const barViewRef = useRef(null);
+  const barWidthRef = useRef(1);
+  const barPageXRef = useRef(0);
+  const durationRef = useRef(0);
+  durationRef.current = audio.durationMillis || 0;
 
-  // Keep durationRef in sync
-  useEffect(() => {
-    durationRef.current = audio.durationMillis || 0;
-  }, [audio.durationMillis]);
-
-  const [seekPreview, setSeekPreview] = useState(null); // 0..1 or null
-
-  // PanResponder created ONCE — no deps. All values are read from refs.
   const seekBarPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        // Fallback: if measure() failed or hasn't run, calculate pageX dynamically
-        // locationX is the relative touch position in the bar, pageX is absolute
         if (barPageXRef.current === 0 && evt.nativeEvent.pageX > 0 && evt.nativeEvent.locationX >= 0) {
           barPageXRef.current = evt.nativeEvent.pageX - evt.nativeEvent.locationX;
         }
@@ -298,10 +273,21 @@ export default function ListenPlayerScreen() {
   const isLoading = audio.status === "loading";
   const hasError = audio.status === "error";
 
-  // --- render -------------------------------------------------------------
+  const filteredSurahs = (surahs || []).filter((s) => {
+    const q = surahQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      String(s.number) === q ||
+      s.englishName.toLowerCase().includes(q) ||
+      (s.englishNameTranslation || "").toLowerCase().includes(q) ||
+      (s.name || "").includes(surahQuery.trim())
+    );
+  });
+
   if (!reciterId) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <StatusBar style="light" />
         <View style={[styles.center, { flex: 1 }]}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
@@ -310,205 +296,260 @@ export default function ListenPlayerScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={goBackSafely} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Слушать</Text>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <StatusBar style="light" />
+
+      {/* Header */}
+      <View style={styles.headerWrap}>
+        <SectionHeader
+          title="Слушать"
+          fontSize={24}
+          lineHeight={32}
+          onBackPress={goBackSafely}
+        />
       </View>
 
-      {/* reciter card: current reciter + compact "change" button */}
-      <View style={[styles.reciterCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.reciterLabel, { color: colors.textSecondary }]}>Чтец</Text>
-          <Text style={[styles.reciterName, { color: colors.text }]} numberOfLines={1}>
-            {reciter ? reciter.name : "…"}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.changeButton, { borderColor: colors.accent }]}
-          onPress={onChangeReciter}
-        >
-          <Ionicons name="swap-horizontal-outline" size={14} color={colors.accent} />
-          <Text style={[styles.changeButtonText, { color: colors.accent }]}>Изменить чтеца</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* now playing: the whole surah as ONE track */}
-      <View style={[styles.nowCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {loadingMeta ? (
-          <ActivityIndicator size="small" color={colors.accent} />
-        ) : (
-          <>
-            <Text style={[styles.surahLabel, { color: colors.textSecondary }]}>
-              Сура · целиком
+      <View style={styles.cardsContainer}>
+        {/* Card 1: Reciter Card */}
+        <View style={styles.reciterCard}>
+          <View style={styles.reciterInfo}>
+            <Text style={styles.label}>ЧТЕЦ</Text>
+            <Text style={styles.reciterName} numberOfLines={1}>
+              {reciter ? reciter.name : "…"}
             </Text>
-            <TouchableOpacity
-              style={[styles.surahButton, { borderColor: colors.border }]}
-              onPress={() => {
-                setSurahQuery("");
-                setSurahPickerOpen(true);
-              }}
-            >
-              <Text style={[styles.surahName, { color: colors.text }]} numberOfLines={1}>
-                {surah
-                  ? `${surahNumber}. ${surah.englishName} · ${surah.name}`
-                  : `Сура ${surahNumber}`}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>
-              Полный аудиотрек суры · {isPlaying || isPaused ? fmt(positionMs) : "00:00"} из{" "}
-              {durationMs ? fmt(durationMs) : "…"}
-            </Text>
-          </>
-        )}
-      </View>
+          </View>
 
-      {/* progress of the WHOLE surah track */}
-      <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View
-          ref={barViewRef}
-          style={[styles.progressBar, { backgroundColor: colors.accentSoft }]}
-          onLayout={(e) => {
-            barWidthRef.current = e.nativeEvent.layout.width;
-            barViewRef.current?.measure?.((x, y, width, height, pageX) => {
-              if (pageX != null) barPageXRef.current = pageX;
-            });
-          }}
-          {...seekBarPan.panHandlers}
-        >
-          <View
-            style={[
-              styles.progressFill,
-              { backgroundColor: colors.accent, width: `${progressRatio * 100}%` },
-            ]}
+          <TouchableOpacity
+            style={styles.changeBtn}
+            onPress={onChangeReciter}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Изменить чтеца"
           >
-            {/* Thumb: visible drag handle at the current position */}
-            <View
-              pointerEvents="none"
-              style={[styles.progressThumb, { backgroundColor: colors.accent, borderColor: colors.card }]}
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="m16 3 4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16" />
+            </Svg>
+            <Text style={styles.changeBtnText}>Изменить чтеца</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Card 2: Surah Selection Card */}
+        <View style={styles.surahCard}>
+          {loadingMeta ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <>
+              <Text style={styles.label}>СУРА · ЦЕЛИКОМ</Text>
+
+              <TouchableOpacity
+                style={styles.surahSelector}
+                onPress={() => {
+                  setSurahQuery("");
+                  setSurahPickerOpen(true);
+                }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Выбрать суру"
+              >
+                <View style={styles.surahSelectorContent}>
+                  <Text numberOfLines={1}>
+                    <Text style={styles.surahLatinText}>
+                      {surah ? `${surahNumber}. ${surah.englishName} ` : `Сура ${surahNumber} `}
+                    </Text>
+                    {surah?.name ? (
+                      <Text style={styles.surahArabicText}>
+                        · {surah.name}
+                      </Text>
+                    ) : null}
+                  </Text>
+                </View>
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <Path d="m6 9 6 6 6-6" />
+                </Svg>
+              </TouchableOpacity>
+
+              <Text style={styles.surahHint}>
+                Полный аудиотрек суры · {isPlaying || isPaused ? fmt(positionMs) : "0:00"} из{" "}
+                {durationMs ? fmt(durationMs) : "0:51"}
+              </Text>
+            </>
+          )}
+        </View>
+
+        {/* Card 3: Progress Card */}
+        <View style={styles.progressCard}>
+          <View
+            ref={barViewRef}
+            style={styles.progressTouchArea}
+            onLayout={(e) => {
+              barWidthRef.current = e.nativeEvent.layout.width;
+              barViewRef.current?.measure?.((x, y, width, height, pageX) => {
+                if (pageX != null) barPageXRef.current = pageX;
+              });
+            }}
+            {...seekBarPan.panHandlers}
+          >
+            <View style={styles.progressBarTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${progressRatio * 100}%` },
+                ]}
+              >
+                <View pointerEvents="none" style={styles.progressThumb} />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.progressTimes}>
+            <Text style={styles.progressTime}>{fmt(positionMs)}</Text>
+            <Text style={styles.progressTime}>
+              {durationMs ? fmt(durationMs) : "--:--"}
+            </Text>
+          </View>
+        </View>
+
+        {/* Center Controls */}
+        <View style={styles.controlsRow}>
+          <TouchableOpacity
+            style={styles.controlBtn}
+            onPress={onPrev}
+            disabled={surahNumber <= 1}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Предыдущая сура"
+            accessibilityRole="button"
+          >
+            <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={surahNumber <= 1 ? colors.muted : colors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="m19 20-12-8 12-8v16zM5 19V5" />
+            </Svg>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.playBtn}
+            onPress={onPlayPause}
+            disabled={isLoading}
+            activeOpacity={0.8}
+            accessibilityLabel={isPlaying ? "Пауза" : "Воспроизвести"}
+            accessibilityRole="button"
+          >
+            {isLoading || (isPlaying && audio.isBuffering) ? (
+              <ActivityIndicator size="small" color={colors.onAccent} />
+            ) : isPlaying ? (
+              <Svg width={32} height={32} viewBox="0 0 24 24" fill={colors.onAccent} stroke={colors.onAccent} strokeWidth={1.5}>
+                <Rect x="6" y="4" width="4" height="16" rx="1" fill={colors.onAccent} />
+                <Rect x="14" y="4" width="4" height="16" rx="1" fill={colors.onAccent} />
+              </Svg>
+            ) : (
+              <Svg width={32} height={32} viewBox="0 0 24 24" fill={colors.onAccent} stroke={colors.onAccent} strokeWidth={1.5}>
+                <Path d="m6 4 14 8-14 8V4z" fill={colors.onAccent} />
+              </Svg>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.controlBtn}
+            onPress={onNext}
+            disabled={surahNumber >= 114}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Следующая сура"
+            accessibilityRole="button"
+          >
+            <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={surahNumber >= 114 ? colors.muted : colors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="m5 4 12 8-12 8V4zM19 5v14" />
+            </Svg>
+          </TouchableOpacity>
+        </View>
+
+        {hasError ? (
+          <Text style={styles.errorText}>
+            Не удалось загрузить аудио этой суры. Проверьте подключение и попробуйте ещё раз.
+          </Text>
+        ) : null}
+      </View>
+
+      {/* Surah Picker Modal */}
+      <Modal
+        visible={surahPickerOpen}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setSurahPickerOpen(false)}
+      >
+        <SafeAreaView style={styles.safe} edges={["top"]}>
+          <StatusBar style="light" />
+
+          <View style={styles.headerWrap}>
+            <SectionHeader
+              title="Выбрать суру"
+              fontSize={24}
+              lineHeight={32}
+              onBackPress={() => setSurahPickerOpen(false)}
             />
           </View>
-        </View>
-        <View style={styles.progressTimes}>
-          <Text style={[styles.progressTime, { color: colors.textSecondary }]}>
-            {fmt(positionMs)}
-          </Text>
-          <Text style={[styles.progressTime, { color: colors.textSecondary }]}>
-            {durationMs ? fmt(durationMs) : "--:--"}
-          </Text>
-        </View>
-      </View>
 
-      {/* controls: prev/next = surahs */}
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={styles.controlBtn}
-          onPress={onPrev}
-          disabled={surahNumber <= 1}
-          hitSlop={{ top: 10, bottom: 10 }}
-        >
-          <Ionicons
-            name="play-skip-back"
-            size={30}
-            color={surahNumber <= 1 ? colors.textSecondary : colors.text}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.playBtn, { backgroundColor: colors.accent }]}
-          onPress={onPlayPause}
-          disabled={isLoading}
-        >
-          {isLoading || (isPlaying && audio.isBuffering) ? (
-            <ActivityIndicator size="small" color={colors.textOnActive} />
-          ) : isPlaying ? (
-            <Ionicons name="pause" size={32} color={colors.textOnActive} />
-          ) : (
-            <Ionicons name="play" size={32} color={colors.textOnActive} />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.controlBtn}
-          onPress={onNext}
-          disabled={surahNumber >= 114}
-          hitSlop={{ top: 10, bottom: 10 }}
-        >
-          <Ionicons
-            name="play-skip-forward"
-            size={30}
-            color={surahNumber >= 114 ? colors.textSecondary : colors.text}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {hasError ? (
-        <Text style={[styles.errorText, { color: colors.danger }]}>
-          Не удалось загрузить аудио этой суры. Проверьте подключение и попробуйте ещё раз.
-        </Text>
-      ) : null}
-
-
-      {/* surah picker modal */}
-      <Modal visible={surahPickerOpen} animationType="slide" transparent={false} onRequestClose={() => setSurahPickerOpen(false)}>
-        <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => setSurahPickerOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={[styles.title, { color: colors.text }]}>Выбрать суру</Text>
-          </View>
-          <View style={[styles.searchWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="search" size={18} color={colors.textSecondary} />
+          <View
+            style={[
+              styles.searchWrap,
+              isSearchFocused && styles.searchWrapFocused,
+            ]}
+          >
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Circle cx={11} cy={11} r={8} />
+              <Path d="m21 21-4.3-4.3" />
+            </Svg>
             <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
+              style={styles.searchInput}
               placeholder="Номер или название суры…"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={colors.muted}
               value={surahQuery}
               onChangeText={setSurahQuery}
               autoCorrect={false}
+              cursorColor={colors.accent}
+              selectionColor={colors.accent}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
             />
           </View>
+
           <FlatList
             data={filteredSurahs}
             keyExtractor={(s) => String(s.number)}
-            contentContainerStyle={{ padding: 16, gap: 8 }}
+            contentContainerStyle={styles.listContent}
             keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[
-                  styles.surahRow,
-                  {
-                    backgroundColor: item.number === surahNumber ? colors.accentSoft : colors.card,
-                    borderColor: item.number === surahNumber ? colors.accent : colors.border,
-                  },
-                ]}
-                onPress={() => {
-                  setSurahNumber(item.number);
-                  setSurahPickerOpen(false);
-                }}
-              >
-                <View style={[styles.numberBadge, { backgroundColor: colors.accentSoft }]}>
-                  <Text style={[styles.numberText, { color: colors.accent }]}>{item.number}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.englishName, { color: colors.text }]} numberOfLines={1}>
-                    {item.englishName}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item }) => {
+              const isSelected = item.number === surahNumber;
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.surahRow,
+                    isSelected && styles.surahRowSelected,
+                  ]}
+                  onPress={() => {
+                    setSurahNumber(item.number);
+                    setSurahPickerOpen(false);
+                  }}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                >
+                  <View style={styles.numberBadge}>
+                    <Text style={styles.numberText}>{item.number}</Text>
+                  </View>
+                  <View style={styles.middleCol}>
+                    <Text style={styles.englishName} numberOfLines={1}>
+                      {item.englishName}
+                    </Text>
+                    <Text style={styles.translation} numberOfLines={1}>
+                      {item.englishNameTranslation} · {item.numberOfAyahs} аятов
+                    </Text>
+                  </View>
+                  <Text style={styles.arabicName} numberOfLines={1}>
+                    {item.name}
                   </Text>
-                  <Text style={[styles.translation, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {item.englishNameTranslation} · {item.numberOfAyahs} аятов
-                  </Text>
-                </View>
-                <Text style={[styles.arabicName, { color: colors.text }]} numberOfLines={1}>
-                  {item.name}
-                </Text>
-              </TouchableOpacity>
-            )}
+                </TouchableOpacity>
+              );
+            }}
             ListEmptyComponent={
-              <Text style={{ color: colors.textSecondary, textAlign: "center", marginTop: 20 }}>
-                Ничего не найдено
-              </Text>
+              <Text style={styles.emptyText}>Ничего не найдено</Text>
             }
           />
         </SafeAreaView>
@@ -523,121 +564,280 @@ function clamp01(x) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16 },
-  title: { fontSize: 20, fontWeight: "800" },
-  center: { alignItems: "center", justifyContent: "center" },
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg, // #0D1613
+  },
+  headerWrap: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  cardsContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  label: {
+    fontFamily: fonts.ui.semibold,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: colors.accent, // #E3BE72
+  },
   reciterCard: {
+    backgroundColor: colors.surface, // #15241F
+    borderWidth: 1,
+    borderColor: colors.border, // #243630
+    borderRadius: radii.card, // 22
+    padding: 16,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 10,
   },
-  reciterLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
-  reciterName: { fontSize: 16, fontWeight: "700", marginTop: 2 },
-  changeButton: {
+  reciterInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  reciterName: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 18,
+    lineHeight: 24,
+    color: colors.text, // #EDE6D6
+  },
+  changeBtn: {
+    height: 44,
+    borderRadius: radii.button, // 14
+    borderWidth: 1,
+    borderColor: colors.accent, // #E3BE72
+    backgroundColor: "transparent",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  changeButtonText: { fontSize: 12, fontWeight: "700" },
-  nowCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 18,
-    marginHorizontal: 16,
-    marginBottom: 10,
-    alignItems: "center",
-  },
-  surahLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, alignSelf: "flex-start" },
-  surahButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    marginTop: 6,
-    alignSelf: "stretch",
+    paddingHorizontal: 12,
     justifyContent: "center",
   },
-  surahName: { fontSize: 16, fontWeight: "800", flex: 1, textAlign: "center" },
-  hint: { fontSize: 12, marginTop: 10, textAlign: "center" },
-  progressCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginHorizontal: 16,
-    marginBottom: 14,
+  changeBtnText: {
+    fontFamily: fonts.ui.semibold,
+    fontSize: 14,
+    lineHeight: 18,
+    color: colors.accent, // #E3BE72
   },
-  progressBar: { height: 22, borderRadius: 11, overflow: "visible", justifyContent: "center" },
-  progressFill: { height: 6, borderRadius: 3, marginLeft: 0, justifyContent: "center", overflow: "visible" },
+  surahCard: {
+    backgroundColor: colors.surface, // #15241F
+    borderWidth: 1,
+    borderColor: colors.border, // #243630
+    borderRadius: radii.card, // 22
+    padding: 16,
+    gap: 8,
+  },
+  surahSelector: {
+    height: 52,
+    borderRadius: radii.button, // 14
+    backgroundColor: colors.bg, // #0D1613
+    borderWidth: 1,
+    borderColor: colors.borderStrong, // #2C4238
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  surahSelectorContent: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  surahLatinText: {
+    fontFamily: fonts.ui.semibold,
+    fontSize: 16,
+    lineHeight: 22,
+    color: colors.text,
+  },
+  surahArabicText: {
+    fontFamily: fonts.arabic.bold,
+    fontSize: 20,
+    lineHeight: 32,
+    color: colors.text,
+  },
+  surahHint: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.muted, // #8FA89E
+    textAlign: "center",
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
+  },
+  progressCard: {
+    backgroundColor: colors.surface, // #15241F
+    borderWidth: 1,
+    borderColor: colors.border, // #243630
+    borderRadius: radii.card, // 22
+    padding: 16,
+  },
+  progressTouchArea: {
+    height: 28,
+    justifyContent: "center",
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: radii.pill,
+    backgroundColor: colors.borderSoft, // #1E2E28
+    position: "relative",
+    justifyContent: "center",
+  },
+  progressFill: {
+    height: 6,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent, // #E3BE72
+    position: "relative",
+  },
   progressThumb: {
     position: "absolute",
-    right: -8,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    top: -5,
+    right: -7,
+    top: -4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.accent, // #E3BE72
   },
-  progressTimes: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
-  progressTime: { fontSize: 12, fontVariant: ["tabular-nums"] },
-  controls: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 34 },
-  controlBtn: { padding: 8 },
-  playBtn: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center" },
-  errorText: { fontSize: 13, textAlign: "center", marginTop: 10 },
-  stopRow: {
+  progressTimes: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  progressTime: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.muted, // #8FA89E
+    fontVariant: ["tabular-nums"],
+  },
+  controlsRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 12,
-    alignSelf: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    gap: 36,
     marginTop: 12,
   },
-  stopText: { fontSize: 12, fontWeight: "600" },
+  controlBtn: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playBtn: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accent, // #E3BE72
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  errorText: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.accent,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  center: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   searchWrap: {
+    height: 52,
+    borderRadius: radii.row, // 18
+    backgroundColor: colors.surface, // #15241F
+    borderWidth: 1,
+    borderColor: colors.border, // #243630
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 14,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    gap: 10,
+    paddingHorizontal: 16,
+    marginHorizontal: 20,
+    marginBottom: 12,
   },
-  searchInput: { flex: 1, fontSize: 15, paddingVertical: 4 },
+  searchWrapFocused: {
+    borderColor: colors.accent,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.ui.regular,
+    fontSize: 16,
+    lineHeight: 20,
+    color: colors.text,
+    paddingVertical: 4,
+  },
+  listContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    gap: 8,
+  },
   surahRow: {
+    height: 76,
+    borderRadius: radii.row,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
+  },
+  surahRowSelected: {
+    backgroundColor: colors.surfaceActive,
+    borderColor: colors.accent,
   },
   numberBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: radii.iconBox,
+    backgroundColor: colors.surfaceActive,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
-  numberText: { fontSize: 15, fontWeight: "800" },
-  englishName: { fontSize: 15, fontWeight: "700" },
-  translation: { fontSize: 12, marginTop: 2 },
-  arabicName: { fontSize: 17, maxWidth: 110 },
+  numberText: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.accent,
+    fontVariant: ["tabular-nums"],
+  },
+  middleCol: {
+    flex: 1,
+    justifyContent: "center",
+    gap: 2,
+    marginRight: 8,
+  },
+  englishName: {
+    fontFamily: fonts.ui.semibold,
+    fontSize: 17,
+    lineHeight: 22,
+    color: colors.text,
+  },
+  translation: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.muted,
+  },
+  arabicName: {
+    fontFamily: fonts.arabic.bold,
+    fontSize: 24,
+    lineHeight: 40,
+    color: colors.text,
+    textAlign: "right",
+  },
+  emptyText: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.muted,
+    textAlign: "center",
+    marginTop: 24,
+  },
 });

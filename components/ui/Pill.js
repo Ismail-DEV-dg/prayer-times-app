@@ -1,19 +1,77 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, AccessibilityInfo } from 'react-native';
 import { colors, radii, fonts } from '../../theme/theme';
 
 export default function Pill({
   showDot = true,
   dotColor = colors.accent,
+  blink = false,
   label,
   children,
   style,
   textStyle,
   ...props
 }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((enabled) => {
+        if (isMounted) setReduceMotion(enabled);
+      })
+      .catch(() => {});
+
+    const sub = AccessibilityInfo.addEventListener?.(
+      'reduceMotionChanged',
+      (enabled) => setReduceMotion(enabled)
+    );
+
+    return () => {
+      isMounted = false;
+      sub?.remove?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!blink || reduceMotion) {
+      opacity.setValue(1);
+      return;
+    }
+
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.25,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    anim.start();
+
+    return () => {
+      anim.stop();
+    };
+  }, [blink, reduceMotion]);
+
   return (
     <View style={[styles.pill, style]} {...props}>
-      {showDot && <View style={[styles.dot, { backgroundColor: dotColor }]} />}
+      {showDot && (
+        <Animated.View
+          style={[
+            styles.dot,
+            { backgroundColor: dotColor, opacity: blink && !reduceMotion ? opacity : 1 },
+          ]}
+        />
+      )}
       {label ? (
         <Text style={[styles.text, textStyle]}>{label}</Text>
       ) : (
@@ -44,6 +102,7 @@ const styles = StyleSheet.create({
   text: {
     fontFamily: fonts.ui.semibold,
     fontSize: 13,
+    lineHeight: 18,
     color: colors.text,
   },
 });
