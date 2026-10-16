@@ -31,10 +31,10 @@ import { Magnetometer } from "expo-sensors";
 // - Header with "Кибла" title, location pill with GPS status, and info modal button
 // - Status row with GPS state dot + message and manual refresh button
 // - Azimuth banner: "НАПРАВЛЕНИЕ НА КААБУ", large degree reading + gold cardinal marker
-// - Static cardinal dial (С, 0°, В, 90°, Ю, 180°, З, 270°) with the Kaaba badge FIXED at
-//   the exact bearing degrees (e.g. 202° for Derbent / Dagestan).
-// - Movable arrow / beam rotating with device orientation. By rotating the phone, the user
-//   aligns the arrow to connect directly with the Kaaba badge. When aligned, "Кибла найдена" triggers.
+// - Clean dial with concentric scale, ticks, and top target guide marker at 12 o'clock ("начало телефона").
+// - Movable Kaaba badge on the pointer ray rotating in real time towards Mecca relative to the top of the phone.
+//   By pointing the top edge of the phone towards Mecca, the user aligns the Kaaba badge with the top guide marker (0°).
+//   When aligned, "Кибла найдена" triggers with a warm golden lock glow.
 // - Calibration card with infinity symbol (∞)
 // - Quran verse card with book icon, verse quote (Al-Baqarah 2:144), and gold border
 
@@ -139,7 +139,7 @@ export default function QiblaScreen() {
   const subscriptionRef = useRef(null);
   const lockRef = useRef(null);
   const freeUnwrappedRef = useRef(0);
-  const prevHeadingRef = useRef(null);
+  const prevScreenAngleRef = useRef(null);
   const smoothedHeadingRef = useRef(null);
   const lastPushedDegRef = useRef(0);
   const lastTickAtRef = useRef(0);
@@ -206,9 +206,9 @@ export default function QiblaScreen() {
     }).start();
   };
 
-  const lockBeam = (targetBearing) => {
+  const lockBeam = () => {
     const cur = freeUnwrappedRef.current;
-    const shortestTarget = cur + signedDelta(cur, targetBearing);
+    const shortestTarget = cur + signedDelta(cur, 0);
     pushBeamTarget(shortestTarget, LOCK_ANIM_MS, Easing.out(Easing.cubic));
     Animated.timing(lockGlow, {
       toValue: 1,
@@ -236,8 +236,9 @@ export default function QiblaScreen() {
     const trackMs = Math.min(Math.max(dt * 2, TRACK_ANIM_MS), TRACK_ANIM_MAX_MS);
     lastTickAtRef.current = now;
 
-    // Invert the 180-degree axis offset so North is at 0° and South is at 180°
-    const magnetic = (magnetometerToHeading(data) + 180) % 360;
+    // Direct magnetic heading without 180° inversion:
+    // Top edge ("начало телефона") pointing North = 0°, East = 90°, South = 180°, West = 270°.
+    const magnetic = magnetometerToHeading(data);
     const rawHeading =
       declinationRef.current != null
         ? (magnetic + declinationRef.current + 360) % 360
@@ -251,29 +252,30 @@ export default function QiblaScreen() {
     }
     const trueHeading = smoothedHeadingRef.current;
 
-    // Delta between device heading and Kaaba bearing
-    const alignDelta = signedDelta(trueHeading, bearingNow);
+    // Relative angle of the Kaaba from the TOP edge ("начало телефона") of the phone:
+    // When the top of the phone points directly at Mecca, screenAngle = 0° (12 o'clock, straight ahead).
+    const screenAngle = (bearingNow - trueHeading + 360) % 360;
 
-    const prev = prevHeadingRef.current;
-    prevHeadingRef.current = trueHeading;
+    const prev = prevScreenAngleRef.current;
+    prevScreenAngleRef.current = screenAngle;
     if (prev == null) {
-      dialAnim.setValue(trueHeading);
-      freeUnwrappedRef.current = trueHeading;
-      lastPushedDegRef.current = trueHeading;
+      dialAnim.setValue(screenAngle);
+      freeUnwrappedRef.current = screenAngle;
+      lastPushedDegRef.current = screenAngle;
       if (!lockRef.current) lockRef.current = createLockMachine();
       return;
     }
 
-    const stepDelta = signedDelta(prev, trueHeading);
+    const stepDelta = signedDelta(prev, screenAngle);
     freeUnwrappedRef.current += stepDelta;
 
     if (!lockRef.current) lockRef.current = createLockMachine();
     const wasLocked = lockRef.current.locked;
-    const locked = lockRef.current.tick(alignDelta);
+    const locked = lockRef.current.tick(screenAngle);
 
     if (!wasLocked && locked) {
-      // Connect and lock the beam directly onto the Kaaba badge target via shortest arc
-      lockBeam(bearingNow);
+      // Connect and lock the beam directly onto the top guide marker at 0° via shortest arc
+      lockBeam();
     }
     if (wasLocked && !locked) {
       unlockBeam();
@@ -309,7 +311,7 @@ export default function QiblaScreen() {
           subscriptionRef.current.remove();
           subscriptionRef.current = null;
         }
-        prevHeadingRef.current = null;
+        prevScreenAngleRef.current = null;
         smoothedHeadingRef.current = null;
       };
     }, [])
@@ -398,14 +400,32 @@ export default function QiblaScreen() {
             </Svg>
           </View>
 
-          {/* Fixed Kaaba Target on perimeter at the exact Qibla bearing */}
+          {/* Top target guide marker at 12 o'clock ("начало телефона") */}
           <View
             style={[
-              styles.kaabaTargetWrapper,
-              { transform: [{ rotate: `${azimuthDegree}deg` }] },
+              styles.topGuideMarker,
+              { borderTopColor: colors.accent },
             ]}
             pointerEvents="none"
-          >
+          />
+
+          {/* Movable Arrow / Beam rotating with device heading, carrying Kaaba badge to Mecca */}
+          <Animated.View style={[styles.beamGroup, { transform: [{ rotate: rotateDeg }] }]}>
+            {/* Soft glow halo when locked / aligned */}
+            <Animated.View
+              style={[
+                styles.beamHaloLock,
+                { backgroundColor: colors.accent, opacity: lockHaloOpacity },
+              ]}
+            />
+
+            {/* Golden pointer arm extending from center to Kaaba badge */}
+            <View style={[styles.needleArm, { backgroundColor: colors.accent }]} />
+
+            {/* Pointer arrow tip pointing directly into Kaaba badge */}
+            <View style={[styles.needleTip, { borderBottomColor: colors.accent }]} />
+
+            {/* Movable Kaaba badge on perimeter */}
             <View
               style={[
                 styles.kaabaChip,
@@ -416,23 +436,6 @@ export default function QiblaScreen() {
                 <View style={[styles.kaabaBand, { backgroundColor: colors.accent }]} />
               </View>
             </View>
-          </View>
-
-          {/* Movable Arrow / Beam rotating with device heading */}
-          <Animated.View style={[styles.beamGroup, { transform: [{ rotate: rotateDeg }] }]}>
-            {/* Soft glow halo when locked / aligned */}
-            <Animated.View
-              style={[
-                styles.beamHaloLock,
-                { backgroundColor: colors.accent, opacity: lockHaloOpacity },
-              ]}
-            />
-
-            {/* Golden pointer arm extending from center to perimeter */}
-            <View style={[styles.needleArm, { backgroundColor: colors.accent }]} />
-
-            {/* Pointer arrow tip pointing towards perimeter */}
-            <View style={[styles.needleTip, { borderBottomColor: colors.accent }]} />
           </Animated.View>
 
           {/* Center Hub base and gold pivot cap */}
@@ -902,6 +905,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
   },
+  topGuideMarker: {
+    position: "absolute",
+    top: 18,
+    left: 32 + DIAL_RADIUS - 6,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 9,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    zIndex: 10,
+  },
   kaabaTargetWrapper: {
     position: "absolute",
     left: 32,
@@ -952,15 +968,15 @@ const styles = StyleSheet.create({
   needleArm: {
     position: "absolute",
     left: DIAL_RADIUS - 1.5,
-    top: 48,
+    top: 50,
     width: 3,
-    height: DIAL_RADIUS - 48,
+    height: DIAL_RADIUS - 50,
     borderRadius: 1.5,
   },
   needleTip: {
     position: "absolute",
     left: DIAL_RADIUS - 5,
-    top: 40,
+    top: 44,
     width: 0,
     height: 0,
     borderLeftWidth: 5,
