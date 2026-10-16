@@ -21,9 +21,10 @@ import {
   qiblaBearing,
   fetchMagneticDeclination,
   magnetometerToHeading,
+  circularSmooth,
 } from "../services/qiblaApi";
 import { createLockMachine, signedDelta, LOCK_ANIM_MS } from "../utils/qiblaLock";
-import { Magnetometer, Accelerometer } from "expo-sensors";
+import { Magnetometer } from "expo-sensors";
 
 // Qibla screen pixel-perfect redesign matching Stitch reference (design/handoff/reference/Qibla.png)
 // Features:
@@ -136,11 +137,11 @@ export default function QiblaScreen() {
   const bearingRef = useRef(initialBearing);
   const declinationRef = useRef(null);
   const subscriptionRef = useRef(null);
-  const accelSubRef = useRef(null);
-  const accelRef = useRef(null);
   const lockRef = useRef(null);
   const freeUnwrappedRef = useRef(0);
   const prevHeadingRef = useRef(null);
+  const smoothedHeadingRef = useRef(null);
+  const lastPushedDegRef = useRef(0);
   const lastTickAtRef = useRef(0);
 
   // Request fresh location every time user enters the Qibla screen
@@ -196,7 +197,7 @@ export default function QiblaScreen() {
     };
   }, [hasPosition, effectiveLocation?.latitude, effectiveLocation?.longitude]);
 
-  const pushBeamTarget = (targetDeg, durationMs, easing) => {
+  const pushBeamTarget = (targetDeg, durationMs, easing = Easing.out(Easing.quad)) => {
     Animated.timing(dialAnim, {
       toValue: targetDeg,
       duration: durationMs,
@@ -232,14 +233,22 @@ export default function QiblaScreen() {
 
     const now = Date.now();
     const dt = lastTickAtRef.current ? now - lastTickAtRef.current : SENSOR_INTERVAL_MS;
-    const trackMs = Math.min(Math.max(dt * 1.5, TRACK_ANIM_MS), TRACK_ANIM_MAX_MS);
+    const trackMs = Math.min(Math.max(dt * 2, TRACK_ANIM_MS), TRACK_ANIM_MAX_MS);
     lastTickAtRef.current = now;
 
-    const magnetic = magnetometerToHeading(data, accelRef.current);
-    const trueHeading =
+    const magnetic = magnetometerToHeading(data);
+    const rawHeading =
       declinationRef.current != null
         ? (magnetic + declinationRef.current + 360) % 360
         : magnetic;
+
+    // Apply low-pass circular exponential moving average to eliminate all sensor noise/jitter
+    if (smoothedHeadingRef.current == null) {
+      smoothedHeadingRef.current = rawHeading;
+    } else {
+      smoothedHeadingRef.current = circularSmooth(smoothedHeadingRef.current, rawHeading, 0.15);
+    }
+    const trueHeading = smoothedHeadingRef.current;
 
     // Delta between device heading and Kaaba bearing
     const alignDelta = signedDelta(trueHeading, bearingNow);
@@ -249,10 +258,13 @@ export default function QiblaScreen() {
     if (prev == null) {
       dialAnim.setValue(trueHeading);
       freeUnwrappedRef.current = trueHeading;
+      lastPushedDegRef.current = trueHeading;
       if (!lockRef.current) lockRef.current = createLockMachine();
       return;
     }
-    freeUnwrappedRef.current += signedDelta(prev, trueHeading);
+
+    const stepDelta = signedDelta(prev, trueHeading);
+    freeUnwrappedRef.current += stepDelta;
 
     if (!lockRef.current) lockRef.current = createLockMachine();
     const wasLocked = lockRef.current.locked;
@@ -268,7 +280,12 @@ export default function QiblaScreen() {
 
     if (locked) return;
 
-    pushBeamTarget(freeUnwrappedRef.current, trackMs, Easing.linear);
+    // Deadband threshold: if movement is tiny hand micro-tremor (< 0.25 deg), don't restart animation
+    const change = Math.abs(freeUnwrappedRef.current - lastPushedDegRef.current);
+    if (change < 0.25) return;
+    lastPushedDegRef.current = freeUnwrappedRef.current;
+
+    pushBeamTarget(freeUnwrappedRef.current, trackMs, Easing.out(Easing.quad));
   };
 
   useFocusEffect(
@@ -283,18 +300,6 @@ export default function QiblaScreen() {
           subscriptionRef.current.remove();
         }
         subscriptionRef.current = Magnetometer.addListener(handleSensorTick);
-
-        try {
-          Accelerometer.setUpdateInterval(SENSOR_INTERVAL_MS);
-          if (accelSubRef.current) {
-            accelSubRef.current.remove();
-          }
-          accelSubRef.current = Accelerometer.addListener((data) => {
-            accelRef.current = data;
-          });
-        } catch (e) {
-          // Accelerometer fallback
-        }
       });
 
       return () => {
@@ -303,12 +308,8 @@ export default function QiblaScreen() {
           subscriptionRef.current.remove();
           subscriptionRef.current = null;
         }
-        if (accelSubRef.current) {
-          accelSubRef.current.remove();
-          accelSubRef.current = null;
-        }
         prevHeadingRef.current = null;
-        accelRef.current = null;
+        smoothedHeadingRef.current = null;
       };
     }, [])
   );
@@ -394,19 +395,6 @@ export default function QiblaScreen() {
                 />
               ))}
             </Svg>
-
-            {/* Static Cardinal Typography Labels */}
-            <Text style={[styles.cardinalNorth, { color: colors.accent }]}>С</Text>
-            <Text style={[styles.deg0, { color: colors.textSecondary }]}>0°</Text>
-
-            <Text style={[styles.cardinalEast, { color: colors.text }]}>В</Text>
-            <Text style={[styles.deg90, { color: colors.textSecondary }]}>90°</Text>
-
-            <Text style={[styles.cardinalSouth, { color: colors.text }]}>Ю</Text>
-            <Text style={[styles.deg180, { color: colors.textSecondary }]}>180°</Text>
-
-            <Text style={[styles.cardinalWest, { color: colors.text }]}>З</Text>
-            <Text style={[styles.deg270, { color: colors.textSecondary }]}>270°</Text>
           </View>
 
           {/* Fixed Kaaba Target on perimeter at the exact Qibla bearing */}
