@@ -187,6 +187,39 @@ test("magnetometerToHeading: top edge west -> 270°", () => {
   approx(h, 270, 0.01, "west");
 });
 
+test("magnetometerToHeading: 3D tilt compensation preserves North/South when tilted in hand", () => {
+  // Dagestan dip angle: BH = 24, BV = 45. Holding phone pitched 35° up:
+  const s35 = Math.sin((35 * Math.PI) / 180);
+  const c35 = Math.cos((35 * Math.PI) / 180);
+  const accelTilted = { x: 0, y: s35, z: c35 };
+
+  // Facing North (tilted): raw Y would be negative (-5.97 uT), inverting to 180° South without tilt comp
+  const magNorthTilted = { x: 0, y: 24 * c35 - 45 * s35, z: -24 * s35 - 45 * c35 };
+  const hNorth = qibla.magnetometerToHeading(magNorthTilted, accelTilted);
+  approx(hNorth, 0, 0.5, "North stays 0° when tilted (no inversion to South)");
+
+  // Facing South (tilted)
+  const magSouthTilted = { x: 0, y: -24 * c35 - 45 * s35, z: 24 * s35 - 45 * c35 };
+  const hSouth = qibla.magnetometerToHeading(magSouthTilted, accelTilted);
+  approx(hSouth, 180, 0.5, "South stays 180° when tilted (no inversion to North)");
+});
+
+test("lock target shortest arc: prevents 360° spin bug on wrap", () => {
+  // Unwrapped angle at -158° (same as 202° after crossing 0°)
+  const cur = -158;
+  const targetBearing = 202;
+  const delta = qiblaLock.signedDelta(cur, targetBearing);
+  const shortestTarget = cur + delta;
+  approx(delta, 0, 0.001, "delta is 0, not +360");
+  approx(shortestTarget, -158, 0.001, "snaps directly without 360° spin");
+
+  // Slightly off by +2°
+  const curOff = -156;
+  const deltaOff = qiblaLock.signedDelta(curOff, targetBearing);
+  approx(deltaOff, -2, 0.001, "delta is -2°");
+  approx(curOff + deltaOff, -158, 0.001, "snaps by -2°");
+});
+
 // ================= QIBLA LOCK STATE MACHINE (light-beam compass) =================
 
 test("signedDelta: shortest arc, sign, and 0/360 wrap", () => {

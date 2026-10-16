@@ -63,9 +63,31 @@ export async function fetchMagneticDeclination(latitude, longitude) {
 //   top east  (-B,  0) ->  90°
 //   top south  (0, -B) -> 180°
 //   top west   (B,  0) -> 270°
-// Requires the phone held flat (screen up) — same assumption as the
-// previous implementation.
-export function magnetometerToHeading({ x, y, z }) {
+// When an optional accelerometer reading {x,y,z} is provided, pitch
+// and roll tilt compensation is applied to project the geomagnetic field
+// onto the true horizontal plane, preventing the 180° North/South inversion
+// when holding the device tilted naturally towards the user's face.
+export function magnetometerToHeading({ x, y, z }, accel) {
+  if (accel && (accel.x !== 0 || accel.y !== 0 || accel.z !== 0)) {
+    const { x: ax, y: ay, z: az } = accel;
+    const normA = Math.hypot(ax, ay, az);
+    if (normA >= 0.1) {
+      const axN = ax / normA;
+      const ayN = ay / normA;
+      const pitch = Math.asin(Math.max(-1, Math.min(1, ayN)));
+      const cosP = Math.cos(pitch);
+      if (Math.abs(cosP) > 0.01) {
+        const roll = -Math.asin(Math.max(-1, Math.min(1, axN / cosP)));
+        const sinP = Math.sin(pitch);
+        const cosR = Math.cos(roll);
+        const sinR = Math.sin(roll);
+        const mxComp = x * cosR + z * sinR;
+        const myComp = x * sinP * sinR + y * cosP - z * sinP * cosR;
+        const heading = (Math.atan2(-mxComp, myComp) * 180) / Math.PI;
+        return (heading + 360) % 360;
+      }
+    }
+  }
   const heading = (Math.atan2(-x, y) * 180) / Math.PI;
   return (heading + 360) % 360;
 }

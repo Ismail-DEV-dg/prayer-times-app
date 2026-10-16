@@ -23,7 +23,7 @@ import {
   magnetometerToHeading,
 } from "../services/qiblaApi";
 import { createLockMachine, signedDelta, LOCK_ANIM_MS } from "../utils/qiblaLock";
-import { Magnetometer } from "expo-sensors";
+import { Magnetometer, Accelerometer } from "expo-sensors";
 
 // Qibla screen pixel-perfect redesign matching Stitch reference (design/handoff/reference/Qibla.png)
 // Features:
@@ -136,6 +136,8 @@ export default function QiblaScreen() {
   const bearingRef = useRef(initialBearing);
   const declinationRef = useRef(null);
   const subscriptionRef = useRef(null);
+  const accelSubRef = useRef(null);
+  const accelRef = useRef(null);
   const lockRef = useRef(null);
   const freeUnwrappedRef = useRef(0);
   const prevHeadingRef = useRef(null);
@@ -204,7 +206,9 @@ export default function QiblaScreen() {
   };
 
   const lockBeam = (targetBearing) => {
-    pushBeamTarget(targetBearing, LOCK_ANIM_MS, Easing.out(Easing.cubic));
+    const cur = freeUnwrappedRef.current;
+    const shortestTarget = cur + signedDelta(cur, targetBearing);
+    pushBeamTarget(shortestTarget, LOCK_ANIM_MS, Easing.out(Easing.cubic));
     Animated.timing(lockGlow, {
       toValue: 1,
       duration: 180,
@@ -231,7 +235,7 @@ export default function QiblaScreen() {
     const trackMs = Math.min(Math.max(dt * 1.5, TRACK_ANIM_MS), TRACK_ANIM_MAX_MS);
     lastTickAtRef.current = now;
 
-    const magnetic = magnetometerToHeading(data);
+    const magnetic = magnetometerToHeading(data, accelRef.current);
     const trueHeading =
       declinationRef.current != null
         ? (magnetic + declinationRef.current + 360) % 360
@@ -243,8 +247,8 @@ export default function QiblaScreen() {
     const prev = prevHeadingRef.current;
     prevHeadingRef.current = trueHeading;
     if (prev == null) {
+      dialAnim.setValue(trueHeading);
       freeUnwrappedRef.current = trueHeading;
-      pushBeamTarget(trueHeading, trackMs, Easing.linear);
       if (!lockRef.current) lockRef.current = createLockMachine();
       return;
     }
@@ -255,7 +259,7 @@ export default function QiblaScreen() {
     const locked = lockRef.current.tick(alignDelta);
 
     if (!wasLocked && locked) {
-      // Connect and lock the beam directly onto the Kaaba badge target
+      // Connect and lock the beam directly onto the Kaaba badge target via shortest arc
       lockBeam(bearingNow);
     }
     if (wasLocked && !locked) {
@@ -279,6 +283,18 @@ export default function QiblaScreen() {
           subscriptionRef.current.remove();
         }
         subscriptionRef.current = Magnetometer.addListener(handleSensorTick);
+
+        try {
+          Accelerometer.setUpdateInterval(SENSOR_INTERVAL_MS);
+          if (accelSubRef.current) {
+            accelSubRef.current.remove();
+          }
+          accelSubRef.current = Accelerometer.addListener((data) => {
+            accelRef.current = data;
+          });
+        } catch (e) {
+          // Accelerometer fallback
+        }
       });
 
       return () => {
@@ -287,7 +303,12 @@ export default function QiblaScreen() {
           subscriptionRef.current.remove();
           subscriptionRef.current = null;
         }
+        if (accelSubRef.current) {
+          accelSubRef.current.remove();
+          accelSubRef.current = null;
+        }
         prevHeadingRef.current = null;
+        accelRef.current = null;
       };
     }, [])
   );
