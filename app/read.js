@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,39 @@ import { useAppData } from "../utils/AppDataContext";
 import { fetchSurahList } from "../services/quranApi";
 import SectionHeader from "../components/ui/SectionHeader";
 
+const SurahRow = React.memo(function SurahRow({ item, onPress }) {
+  const [isPressed, setIsPressed] = useState(false);
+
+  return (
+    <TouchableOpacity
+      style={[styles.surahRow, isPressed && styles.surahRowActive]}
+      onPress={() => onPress(item.number)}
+      onPressIn={() => setIsPressed(true)}
+      onPressOut={() => setIsPressed(false)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.number}. ${item.englishName}, ${item.numberOfAyahs} аятов`}
+    >
+      <View style={styles.numberBadge}>
+        <Text style={styles.numberText}>{item.number}</Text>
+      </View>
+
+      <View style={styles.middleCol}>
+        <Text style={styles.englishName} numberOfLines={1}>
+          {item.englishName}
+        </Text>
+        <Text style={styles.translation} numberOfLines={1}>
+          {item.englishNameTranslation} · {item.numberOfAyahs} аятов
+        </Text>
+      </View>
+
+      <Text style={styles.arabicName} numberOfLines={1}>
+        {item.name}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
 // Surah list for the READ mode. Text comes from verified sources (primary + fallback).
 // On failure an honest error is shown.
 export default function ReadScreen() {
@@ -29,7 +62,6 @@ export default function ReadScreen() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [activeSurahNumber, setActiveSurahNumber] = useState(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -65,16 +97,17 @@ export default function ReadScreen() {
     load();
   }, [load]);
 
-  const filtered = (surahs || []).filter((s) => {
+  const filtered = useMemo(() => {
+    const list = surahs || [];
     const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return (
+    if (!q) return list;
+    return list.filter((s) => (
       String(s.number) === q ||
       s.englishName.toLowerCase().includes(q) ||
       (s.englishNameTranslation || "").toLowerCase().includes(q) ||
       (s.name || "").includes(query.trim())
-    );
-  });
+    ));
+  }, [surahs, query]);
 
   // Back guard: never trigger an unhandled GO_BACK; fall back to Quran.
   const goBack = () => {
@@ -85,38 +118,28 @@ export default function ReadScreen() {
     }
   };
 
-  const renderItem = ({ item }) => {
-    const isActive = activeSurahNumber === item.number;
+  const handlePressSurah = useCallback(
+    (num) => {
+      router.push(`/surah/${num}`);
+    },
+    [router]
+  );
 
-    return (
-      <TouchableOpacity
-        style={[styles.surahRow, isActive && styles.surahRowActive]}
-        onPress={() => router.push(`/surah/${item.number}`)}
-        onPressIn={() => setActiveSurahNumber(item.number)}
-        onPressOut={() => setActiveSurahNumber(null)}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel={`${item.number}. ${item.englishName}, ${item.numberOfAyahs} аятов`}
-      >
-        <View style={styles.numberBadge}>
-          <Text style={styles.numberText}>{item.number}</Text>
-        </View>
+  const renderItem = useCallback(
+    ({ item }) => <SurahRow item={item} onPress={handlePressSurah} />,
+    [handlePressSurah]
+  );
 
-        <View style={styles.middleCol}>
-          <Text style={styles.englishName} numberOfLines={1}>
-            {item.englishName}
-          </Text>
-          <Text style={styles.translation} numberOfLines={1}>
-            {item.englishNameTranslation} · {item.numberOfAyahs} аятов
-          </Text>
-        </View>
+  const keyExtractor = useCallback((s) => String(s.number), []);
 
-        <Text style={styles.arabicName} numberOfLines={1}>
-          {item.name}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
+  const getItemLayout = useCallback(
+    (data, index) => ({
+      length: 84, // 76 height + 8 gap
+      offset: 84 * index,
+      index,
+    }),
+    []
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -193,11 +216,16 @@ export default function ReadScreen() {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={(s) => String(s.number)}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           renderItem={renderItem}
+          getItemLayout={getItemLayout}
+          initialNumToRender={14}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews={true}
           ListEmptyComponent={
             <Text style={styles.emptyText}>Ничего не найдено</Text>
           }

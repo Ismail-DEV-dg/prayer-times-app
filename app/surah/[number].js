@@ -189,21 +189,26 @@ export default function SurahScreen() {
     await saveReciter(validId);
   };
 
-  const playAyah = (ayah, forceRestart = false) => {
-    const key = `${surahNumber}/${ayah.numberInSurah}`;
-    const activeReciter = normalizeReciterId(reciter);
-    const primary = getAyahAudioUrl(surahNumber, ayah.numberInSurah, activeReciter, ayah.globalNumber, selectedCity);
-    const fallback = getAyahAudioUrlFallback(ayah.globalNumber, activeReciter);
-    audio.play(primary, key, fallback, forceRestart).catch(() => {});
-  };
+  const playAyah = useCallback(
+    (ayah, forceRestart = false) => {
+      const key = `${surahNumber}/${ayah.numberInSurah}`;
+      const activeReciter = normalizeReciterId(reciter);
+      const primary = getAyahAudioUrl(surahNumber, ayah.numberInSurah, activeReciter, ayah.globalNumber, selectedCity);
+      const fallback = getAyahAudioUrlFallback(ayah.globalNumber, activeReciter);
+      audio.play(primary, key, fallback, forceRestart).catch(() => {});
+    },
+    [surahNumber, reciter, selectedCity, audio]
+  );
 
-  const renderAyah = ({ item }) => {
-    const key = `${surahNumber}/${item.numberInSurah}`;
-    const isPlaying = audio.playingKey === key && !audio.paused;
-    const isPaused = audio.playingKey === key && audio.paused;
-    const isLoading = audio.loadingKey === key;
-    const hasError = audio.errorKey === key;
-    const isActive = isPlaying || isPaused;
+  const renderAyah = useCallback(
+    ({ item }) => {
+      const key = `${surahNumber}/${item.numberInSurah}`;
+      const isPlaying = audio.playingKey === key && !audio.paused;
+      const isPaused = audio.playingKey === key && audio.paused;
+      const isLoading = audio.loadingKey === key;
+      const hasError = audio.errorKey === key;
+      const isActive = isPlaying || isPaused;
+      const isTafsirActive = tafsirModalVisible && activeTafsir?.ayahNumber === item.numberInSurah;
 
     return (
       <TouchableOpacity
@@ -293,9 +298,7 @@ export default function SurahScreen() {
           <TouchableOpacity
             style={[
               styles.tafsirBtn,
-              tafsirModalVisible &&
-                activeTafsir?.ayahNumber === item.numberInSurah &&
-                styles.tafsirBtnActive,
+              isTafsirActive && styles.tafsirBtnActive,
             ]}
             onPress={() => openTafsir(item.numberInSurah, 170)}
             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
@@ -319,7 +322,7 @@ export default function SurahScreen() {
         )}
       </TouchableOpacity>
     );
-  };
+  }, [surahNumber, audio, playAyah, tafsirModalVisible, activeTafsir, openTafsir]);
 
   if (loading && !surah) {
     return (
@@ -447,6 +450,10 @@ export default function SurahScreen() {
         contentContainerStyle={styles.ayahListContent}
         showsVerticalScrollIndicator={false}
         renderItem={renderAyah}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={true}
       />
 
       {/* Tafsir Bottom Sheet Modal */}
