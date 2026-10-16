@@ -786,6 +786,35 @@ test("Mosque proportions: un-squashed Stitch aspect ratio (312:280) and lowered 
   assert(settingsContent.includes("bottom: MOCKUP_MOSQUE_BOTTOM"), "SettingsScreen must apply MOCKUP_MOSQUE_BOTTOM to mockupMosqueWrap");
 });
 
+test("Background player: notification actions, channels, and categories defined", () => {
+  const bgPlayerContent = fs.readFileSync(path.join(ROOT, "services", "quranBackgroundPlayer.js"), "utf8");
+  assert(bgPlayerContent.includes("ACTION_PLAY_PAUSE"), "Must define ACTION_PLAY_PAUSE");
+  assert(bgPlayerContent.includes("ACTION_PREV"), "Must define ACTION_PREV");
+  assert(bgPlayerContent.includes("ACTION_NEXT"), "Must define ACTION_NEXT");
+  assert(bgPlayerContent.includes("ACTION_REWIND"), "Must define ACTION_REWIND");
+  assert(bgPlayerContent.includes("ACTION_FORWARD"), "Must define ACTION_FORWARD");
+  assert(bgPlayerContent.includes("ACTION_LOOP"), "Must define ACTION_LOOP");
+  assert(bgPlayerContent.includes("setNotificationChannelAsync"), "Must create Android notification channel");
+  assert(bgPlayerContent.includes("setNotificationCategoryAsync"), "Must define category with actions");
+});
+
+test("Listen player: Arabic surah name typography prevents harakats clipping", () => {
+  const playerContent = fs.readFileSync(path.join(ROOT, "app", "listen", "player.js"), "utf8");
+  assert(playerContent.includes("surahTitleLine"), "surahTitleLine must wrap the surah title text");
+  assert(playerContent.includes("minHeight: 56"), "surahSelector must have minHeight: 56 rather than fixed height");
+  assert(playerContent.includes("surahArabicText"), "surahArabicText must be styled");
+  assert(playerContent.includes("seekBtn"), "player must render rewind and forward buttons");
+  assert(playerContent.includes("loopBtn"), "player must render loop toggle button");
+});
+
+test("Surah audio hook: supports isLooping, toggleLoop, and seekBy", () => {
+  const hookContent = fs.readFileSync(path.join(ROOT, "hooks", "useSurahAudio.js"), "utf8");
+  assert(hookContent.includes("isLooping"), "useSurahAudio must support isLooping state");
+  assert(hookContent.includes("toggleLoop"), "useSurahAudio must export toggleLoop");
+  assert(hookContent.includes("seekBy"), "useSurahAudio must export seekBy");
+  assert(hookContent.includes("setIsLoopingAsync"), "useSurahAudio must set looping on Sound");
+});
+
 // ================= OUTPUT =================
 
 console.log(results.join("\n"));

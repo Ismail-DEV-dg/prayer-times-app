@@ -33,6 +33,20 @@ export function useSurahAudio() {
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
+  const isLoopingRef = useRef(false);
+
+  const toggleLoop = useCallback(async () => {
+    const next = !isLoopingRef.current;
+    isLoopingRef.current = next;
+    if (mountedRef.current) setIsLooping(next);
+    if (soundRef.current) {
+      try {
+        await soundRef.current.setIsLoopingAsync(next);
+      } catch (e) {}
+    }
+    return next;
+  }, []);
 
   // Optional finish callback (auto-advance to the next surah). Kept in
   // a ref so load() never needs to change identity.
@@ -108,7 +122,11 @@ export function useSurahAudio() {
           });
           const { sound } = await Audio.Sound.createAsync(
             { uri: urls[i] },
-            { shouldPlay: true, ...(startMillis > 0 ? { positionMillis: startMillis } : {}) },
+            {
+              shouldPlay: true,
+              isLooping: isLoopingRef.current,
+              ...(startMillis > 0 ? { positionMillis: startMillis } : {}),
+            },
             (playbackStatus) => {
               // onPlaybackStatusUpdate: only the CURRENT sound may update
               // the player state. Guarded by soundRef identity + token.
@@ -133,10 +151,12 @@ export function useSurahAudio() {
                 }
               }
               if (playbackStatus.didJustFinish) {
-                // The WHOLE surah track has really finished: unload and
-                // notify (auto-next). Called AFTER the internal unload so
-                // the player sees a clean state. Only the CURRENT sound.
+                // The WHOLE surah track has really finished:
                 if (soundRef.current === sound) {
+                  if (isLoopingRef.current) {
+                    sound.replayAsync().catch(() => {});
+                    return;
+                  }
                   const finishedKey = key;
                   unload().then(() => {
                     if (onFinishRef.current) onFinishRef.current(finishedKey);
@@ -237,6 +257,24 @@ export function useSurahAudio() {
     }
   }, []);
 
+  // Relative seek (forward / rewind by deltaMillis)
+  const seekBy = useCallback(async (deltaMillis) => {
+    const sound = soundRef.current;
+    const delta = Number(deltaMillis);
+    if (!sound || !Number.isFinite(delta)) return;
+    try {
+      const st = await sound.getStatusAsync();
+      if (!st.isLoaded) return;
+      const cur = st.positionMillis || 0;
+      const dur = st.durationMillis || 0;
+      const target = Math.max(0, Math.min(dur > 0 ? dur : Infinity, cur + delta));
+      await sound.setPositionAsync(target);
+      if (mountedRef.current) setPositionMillis(target);
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
   // Current playback position snapshot (poll; the status callback already
   // streams updates, this is for callers that want a one-shot read).
   const getPosition = useCallback(async () => {
@@ -276,11 +314,14 @@ export function useSurahAudio() {
     play,
     pause,
     seekTo,
+    seekBy,
     getPosition,
     setOnFinish,
     status,
     positionMillis,
     durationMillis,
     isBuffering,
+    isLooping,
+    toggleLoop,
   };
 }
