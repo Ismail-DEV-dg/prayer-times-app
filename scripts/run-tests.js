@@ -786,18 +786,6 @@ test("Mosque proportions: un-squashed Stitch aspect ratio (312:280) and lowered 
   assert(settingsContent.includes("bottom: MOCKUP_MOSQUE_BOTTOM"), "SettingsScreen must apply MOCKUP_MOSQUE_BOTTOM to mockupMosqueWrap");
 });
 
-test("Background player: notification actions, channels, and categories defined", () => {
-  const bgPlayerContent = fs.readFileSync(path.join(ROOT, "services", "quranBackgroundPlayer.js"), "utf8");
-  assert(bgPlayerContent.includes("ACTION_PLAY_PAUSE"), "Must define ACTION_PLAY_PAUSE");
-  assert(bgPlayerContent.includes("ACTION_PREV"), "Must define ACTION_PREV");
-  assert(bgPlayerContent.includes("ACTION_NEXT"), "Must define ACTION_NEXT");
-  assert(bgPlayerContent.includes("ACTION_REWIND"), "Must define ACTION_REWIND");
-  assert(bgPlayerContent.includes("ACTION_FORWARD"), "Must define ACTION_FORWARD");
-  assert(bgPlayerContent.includes("ACTION_LOOP"), "Must define ACTION_LOOP");
-  assert(bgPlayerContent.includes("setNotificationChannelAsync"), "Must create Android notification channel");
-  assert(bgPlayerContent.includes("setNotificationCategoryAsync"), "Must define category with actions");
-});
-
 test("Listen player: Arabic surah name typography prevents harakats clipping", () => {
   const playerContent = fs.readFileSync(path.join(ROOT, "app", "listen", "player.js"), "utf8");
   assert(playerContent.includes("surahTitleLine"), "surahTitleLine must wrap the surah title text");

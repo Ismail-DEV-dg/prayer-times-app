@@ -31,13 +31,6 @@ import {
 } from "../../services/quranSurahAudioRegistry";
 import { useSurahAudio } from "../../hooks/useSurahAudio";
 import SectionHeader from "../../components/ui/SectionHeader";
-import {
-  initBackgroundPlayer,
-  requestPlayerNotificationPermissions,
-  updateBackgroundPlayerNotification,
-  dismissBackgroundPlayerNotification,
-  addNotificationActionListener,
-} from "../../services/quranBackgroundPlayer";
 
 // FULL-SURAH Listen player. ONE SURAH = ONE CONTINUOUS TRACK: a single
 // Sound loads the entire surah ({server}/NNN.mp3), so the progress bar,
@@ -205,58 +198,17 @@ export default function ListenPlayerScreen() {
   }, [audio]);
 
   const onStop = () => {
-    dismissBackgroundPlayerNotification().catch(() => {});
     audio.unload().catch(() => {});
   };
 
   const onChangeReciter = () => {
     // Stop the current sound before leaving — the old reciter must not
     // keep playing while the user browses the picker.
-    dismissBackgroundPlayerNotification().catch(() => {});
     audio.unload().catch(() => {});
     router.push("/listen/reciter");
   };
 
-  // --- background notification player sync --------------------------------
-  useEffect(() => {
-    requestPlayerNotificationPermissions().catch(() => {});
-    initBackgroundPlayer().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = addNotificationActionListener({
-      onPlayPause,
-      onPrev,
-      onNext,
-      onRewind,
-      onForward,
-      onToggleLoop,
-    });
-    return unsubscribe;
-  }, [onPlayPause, onPrev, onNext, onRewind, onForward, onToggleLoop]);
-
   const reciter = reciterId ? getListenReciter(reciterId) : null;
-
-  useEffect(() => {
-    if (!reciterId || audio.status === "idle" || audio.status === "error") {
-      dismissBackgroundPlayerNotification().catch(() => {});
-      return;
-    }
-    if (surah && reciter) {
-      updateBackgroundPlayerNotification({
-        surah,
-        reciter,
-        isPlaying: audio.status === "playing",
-        isLooping: audio.isLooping,
-      }).catch(() => {});
-    }
-  }, [surah, reciter, reciterId, audio.status, audio.isLooping]);
-
-  useEffect(() => {
-    return () => {
-      dismissBackgroundPlayerNotification().catch(() => {});
-    };
-  }, []);
 
   // Surah picker: search by number / english name / translation / arabic.
   const filteredSurahs = useMemo(() => {
@@ -272,7 +224,6 @@ export default function ListenPlayerScreen() {
   }, [surahs, surahQuery]);
 
   const goBackSafely = () => {
-    dismissBackgroundPlayerNotification().catch(() => {});
     audio.unload().catch(() => {});
     if (router.canGoBack()) {
       router.back();
