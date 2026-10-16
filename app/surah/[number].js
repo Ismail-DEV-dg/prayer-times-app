@@ -26,7 +26,54 @@ import {
 } from "../../services/quranApi";
 import { useAyahAudio } from "../../hooks/useAyahAudio";
 import { useAppData } from "../../utils/AppDataContext";
-import { getReciter, saveReciter } from "../../utils/storage";
+import {
+  getReciter,
+  saveReciter,
+  getSavedReadingTheme,
+  saveReadingTheme,
+} from "../../utils/storage";
+
+const DARK_READING_THEME = {
+  isLight: false,
+  statusBarStyle: "light",
+  bg: colors.bg, // #0D1613
+  surface: colors.surface, // #15241F
+  surfaceActive: colors.surfaceActive, // #1B2F28
+  border: colors.border, // #243630
+  borderSoft: colors.borderSoft, // #1E2E28
+  borderStrong: colors.borderStrong, // #2C4238
+  text: colors.text, // #EDE6D6
+  textDim: colors.textDim, // #C9C2B2
+  muted: colors.muted, // #8FA89E
+  accent: colors.accent, // #E3BE72
+  onAccent: colors.onAccent, // #0D1613
+  cardBg: colors.surface, // #15241F
+  cardActiveBg: colors.surfaceActive, // #1B2F28
+  numberPillBg: colors.bg, // #0D1613
+  sheetBg: colors.surface, // #15241F
+  sheetBackdrop: "rgba(0, 0, 0, 0.55)",
+};
+
+const LIGHT_READING_THEME = {
+  isLight: true,
+  statusBarStyle: "dark",
+  bg: "#F8F6F0", // мягкий книжный фон
+  surface: "#FFFFFF", // чистый белый фон карточек
+  surfaceActive: "#FAF6EE", // мягкий золотистый оттенок активной карточки/чипа
+  border: "#E8E2D6", // аккуратная бумажная рамка
+  borderSoft: "#EDE8DF",
+  borderStrong: "#DCD4C4",
+  text: "#1C2421", // глубокий темный цвет для текста (WCAG AAA)
+  textDim: "#2C3B35", // цвет русского перевода
+  muted: "#72847D", // подписи, счетчики
+  accent: "#A87C28", // благородное золото для светлого фона
+  onAccent: "#FFFFFF",
+  cardBg: "#FFFFFF",
+  cardActiveBg: "#FAF6EE",
+  numberPillBg: "#F4EFE4",
+  sheetBg: "#FFFFFF",
+  sheetBackdrop: "rgba(0, 0, 0, 0.4)",
+};
 
 // One surah: a simple vertical list of ayahs. Every ayah is an
 // interactive item with per-ayah audio (exact Surah X / Ayah N via
@@ -43,6 +90,29 @@ export default function SurahScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reciter, setReciter] = useState(DEFAULT_RECITER);
+  const [isLightMode, setIsLightMode] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    getSavedReadingTheme().then((saved) => {
+      if (mounted && saved === "light") {
+        setIsLightMode(true);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const toggleTheme = () => {
+    setIsLightMode((prev) => {
+      const next = !prev;
+      saveReadingTheme(next ? "light" : "dark");
+      return next;
+    });
+  };
+
+  const tColors = isLightMode ? LIGHT_READING_THEME : DARK_READING_THEME;
 
   const audio = useAyahAudio();
 
@@ -116,13 +186,20 @@ export default function SurahScreen() {
     const segments = paragraph.split(/([\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\s]*[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+|[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF])/g);
 
     return (
-      <Text key={index} style={styles.tafsirParagraph} selectable>
+      <Text
+        key={index}
+        style={[styles.tafsirParagraph, isLightMode && { color: tColors.textDim }]}
+        selectable
+      >
         {segments.map((seg, sIdx) => {
           if (!seg) return null;
           const isArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(seg);
           if (isArabic) {
             return (
-              <Text key={sIdx} style={styles.tafsirArabicQuote}>
+              <Text
+                key={sIdx}
+                style={[styles.tafsirArabicQuote, isLightMode && { color: tColors.text }]}
+              >
                 {seg}
               </Text>
             );
@@ -212,7 +289,17 @@ export default function SurahScreen() {
 
     return (
       <TouchableOpacity
-        style={[styles.ayahCard, isActive && styles.ayahCardActive]}
+        style={[
+          styles.ayahCard,
+          isLightMode && {
+            backgroundColor: tColors.cardBg,
+            borderColor: tColors.border,
+          },
+          isActive && (isLightMode ? {
+            backgroundColor: tColors.cardActiveBg,
+            borderColor: tColors.accent,
+          } : styles.ayahCardActive),
+        ]}
         onPress={() => playAyah(item, true)}
         activeOpacity={0.8}
         accessibilityRole="button"
@@ -220,16 +307,31 @@ export default function SurahScreen() {
       >
         <View style={styles.ayahTopRow}>
           {/* Pill with ayah number */}
-          <View style={styles.numberPill}>
-            <Text style={styles.numberPillText}>{item.numberInSurah}</Text>
+          <View
+            style={[
+              styles.numberPill,
+              isLightMode && {
+                backgroundColor: tColors.numberPillBg,
+                borderColor: tColors.borderStrong,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.numberPillText,
+                isLightMode && { color: tColors.accent },
+              ]}
+            >
+              {item.numberInSurah}
+            </Text>
           </View>
 
           {/* Audio controls */}
           <View style={styles.audioControls}>
             {isLoading ? (
-              <ActivityIndicator size="small" color={colors.accent} />
+              <ActivityIndicator size="small" color={tColors.accent} />
             ) : hasError ? (
-              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={tColors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                 <Circle cx={12} cy={12} r={10} />
                 <Path d="M12 8v4M12 16h.01" />
               </Svg>
@@ -242,7 +344,7 @@ export default function SurahScreen() {
                   accessibilityLabel="Повтор аята"
                   accessibilityRole="button"
                 >
-                  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={audio.isLooping ? colors.accent : colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={audio.isLooping ? tColors.accent : tColors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                     <Path d="m17 2 4 4-4 4" />
                     <Path d="M3 11V9a4 4 0 0 1 4-4h14" />
                     <Path d="m7 22-4-4 4-4" />
@@ -258,12 +360,12 @@ export default function SurahScreen() {
                   accessibilityRole="button"
                 >
                   {isPlaying ? (
-                    <Svg width={20} height={20} viewBox="0 0 24 24" fill={colors.accent} stroke={colors.accent} strokeWidth={1.5}>
+                    <Svg width={20} height={20} viewBox="0 0 24 24" fill={tColors.accent} stroke={tColors.accent} strokeWidth={1.5}>
                       <Rect x="6" y="4" width="4" height="16" rx="1" />
                       <Rect x="14" y="4" width="4" height="16" rx="1" />
                     </Svg>
                   ) : (
-                    <Svg width={20} height={20} viewBox="0 0 24 24" fill={colors.accent} stroke={colors.accent} strokeWidth={1.5}>
+                    <Svg width={20} height={20} viewBox="0 0 24 24" fill={tColors.accent} stroke={tColors.accent} strokeWidth={1.5}>
                       <Path d="m6 4 14 8-14 8V4z" />
                     </Svg>
                   )}
@@ -271,7 +373,7 @@ export default function SurahScreen() {
               </View>
             ) : (
               <View style={styles.iconTouchBtn}>
-                <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={tColors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                   <Path d="M4 15v-3a8 8 0 0 1 16 0v3" />
                   <Rect x="3" y="14" width="4" height="7" rx="2" />
                   <Rect x="17" y="14" width="4" height="7" rx="2" />
@@ -282,13 +384,25 @@ export default function SurahScreen() {
         </View>
 
         {/* Arabic text */}
-        <Text style={styles.arabic} selectable>
+        <Text
+          style={[
+            styles.arabic,
+            isLightMode && { color: tColors.text },
+          ]}
+          selectable
+        >
           {item.arabic}
         </Text>
 
         {/* Translation */}
         {item.translation ? (
-          <Text style={styles.translation} selectable>
+          <Text
+            style={[
+              styles.translation,
+              isLightMode && { color: tColors.textDim },
+            ]}
+            selectable
+          >
             {item.translation}
           </Text>
         ) : null}
@@ -298,7 +412,8 @@ export default function SurahScreen() {
           <TouchableOpacity
             style={[
               styles.tafsirBtn,
-              isTafsirActive && styles.tafsirBtnActive,
+              isLightMode && { borderColor: tColors.accent },
+              isTafsirActive && (isLightMode ? { backgroundColor: tColors.surfaceActive } : styles.tafsirBtnActive),
             ]}
             onPress={() => openTafsir(item.numberInSurah, 170)}
             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
@@ -306,31 +421,31 @@ export default function SurahScreen() {
             accessibilityRole="button"
             accessibilityLabel={`Тафсир ас-Саади, аят ${item.numberInSurah}`}
           >
-            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={tColors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
               <Path d="M6 6h10" />
               <Path d="M6 10h10" />
             </Svg>
-            <Text style={styles.tafsirBtnText}>Ас-Саади</Text>
+            <Text style={[styles.tafsirBtnText, isLightMode && { color: tColors.accent }]}>Ас-Саади</Text>
           </TouchableOpacity>
         </View>
 
         {hasError && (
-          <Text style={styles.audioErrorText}>
+          <Text style={[styles.audioErrorText, isLightMode && { color: tColors.accent }]}>
             Не удалось загрузить аудио. Источники недоступны.
           </Text>
         )}
       </TouchableOpacity>
     );
-  }, [surahNumber, audio, playAyah, tafsirModalVisible, activeTafsir, openTafsir]);
+  }, [surahNumber, audio, playAyah, tafsirModalVisible, activeTafsir, openTafsir, isLightMode, tColors]);
 
   if (loading && !surah) {
     return (
-      <SafeAreaView style={styles.safe} edges={["top"]}>
-        <StatusBar style="light" />
+      <SafeAreaView style={[styles.safe, isLightMode && { backgroundColor: tColors.bg }]} edges={["top"]}>
+        <StatusBar style={tColors.statusBarStyle} />
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.loadingText}>Загружаем суру…</Text>
+          <ActivityIndicator size="large" color={tColors.accent} />
+          <Text style={[styles.loadingText, isLightMode && { color: tColors.muted }]}>Загружаем суру…</Text>
         </View>
       </SafeAreaView>
     );
@@ -338,35 +453,35 @@ export default function SurahScreen() {
 
   if (error) {
     return (
-      <SafeAreaView style={styles.safe} edges={["top"]}>
-        <StatusBar style="light" />
-        <View style={styles.header}>
+      <SafeAreaView style={[styles.safe, isLightMode && { backgroundColor: tColors.bg }]} edges={["top"]}>
+        <StatusBar style={tColors.statusBarStyle} />
+        <View style={[styles.header, isLightMode && { backgroundColor: tColors.bg }]}>
           <TouchableOpacity
-            style={styles.backBtn}
+            style={[styles.backBtn, isLightMode && { borderColor: tColors.border, backgroundColor: tColors.surface }]}
             onPress={goBackSafely}
             activeOpacity={0.7}
             accessibilityLabel="Назад"
             accessibilityRole="button"
           >
-            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={tColors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M19 12H5M12 19l-7-7 7-7" />
             </Svg>
           </TouchableOpacity>
-          <Text style={styles.titleLatin}>Сура {surahNumber}</Text>
+          <Text style={[styles.titleLatin, isLightMode && { color: tColors.text }]}>Сура {surahNumber}</Text>
         </View>
         <View style={styles.errorCenter}>
-          <Svg width={36} height={36} viewBox="0 0 24 24" fill="none" stroke={colors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={36} height={36} viewBox="0 0 24 24" fill="none" stroke={tColors.muted} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
             <Path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-15.08 3.52M2 2l20 20M6.3 6.3a8 8 0 0 0-4.56 7.22 5 5 0 0 0 5 5h11.44" />
           </Svg>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={[styles.errorText, isLightMode && { color: tColors.text }]}>{error}</Text>
           <TouchableOpacity
-            style={styles.retryButton}
+            style={[styles.retryButton, isLightMode && { backgroundColor: tColors.accent }]}
             onPress={() => load(reciter)}
             activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel="Повторить"
           >
-            <Text style={styles.retryButtonText}>Повторить</Text>
+            <Text style={[styles.retryButtonText, isLightMode && { color: tColors.onAccent }]}>Повторить</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -374,36 +489,68 @@ export default function SurahScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <StatusBar style="light" />
+    <SafeAreaView style={[styles.safe, isLightMode && { backgroundColor: tColors.bg }]} edges={["top"]}>
+      <StatusBar style={tColors.statusBarStyle} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, isLightMode && { backgroundColor: tColors.bg }]}>
         <TouchableOpacity
-          style={styles.backBtn}
+          style={[
+            styles.backBtn,
+            isLightMode && { borderColor: tColors.border, backgroundColor: tColors.surface },
+          ]}
           onPress={goBackSafely}
           activeOpacity={0.7}
           accessibilityLabel="Назад"
           accessibilityRole="button"
         >
-          <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={tColors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
             <Path d="M19 12H5M12 19l-7-7 7-7" />
           </Svg>
         </TouchableOpacity>
 
         <View style={styles.headerTitleWrap}>
           <Text style={styles.headerTitleLine} numberOfLines={1}>
-            <Text style={styles.titleLatin}>{surah.englishName}</Text>
-            <Text style={styles.titleArabic}> · {surah.name}</Text>
+            <Text style={[styles.titleLatin, isLightMode && { color: tColors.text }]}>{surah.englishName}</Text>
+            <Text style={[styles.titleArabic, isLightMode && { color: tColors.text }]}> · {surah.name}</Text>
           </Text>
-          <Text style={styles.subtitle} numberOfLines={1}>
+          <Text style={[styles.subtitle, isLightMode && { color: tColors.muted }]} numberOfLines={1}>
             {surah.englishNameTranslation} · {surah.numberOfAyahs} аятов
           </Text>
         </View>
 
-        <View style={styles.translationBlock}>
-          <Text style={styles.translationLabel}>ПЕРЕВОД</Text>
-          <Text style={styles.translatorName}>Э. Кулиев</Text>
+        {/* Right Header Area: Theme Toggle (crescent/sun) + Translation block */}
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[
+              styles.themeToggleBtn,
+              isLightMode && {
+                borderColor: tColors.border,
+                backgroundColor: tColors.surfaceActive,
+              },
+            ]}
+            onPress={toggleTheme}
+            activeOpacity={0.7}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            accessibilityRole="button"
+            accessibilityLabel={isLightMode ? "Включить тёмную тему" : "Включить режим чтения (светлая тема)"}
+          >
+            {isLightMode ? (
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={tColors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Circle cx={12} cy={12} r={5} />
+                <Path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              </Svg>
+            ) : (
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={tColors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </Svg>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.translationBlock}>
+            <Text style={[styles.translationLabel, isLightMode && { color: tColors.accent }]}>ПЕРЕВОД</Text>
+            <Text style={[styles.translatorName, isLightMode && { color: tColors.text }]}>Э. Кулиев</Text>
+          </View>
         </View>
       </View>
 
@@ -421,7 +568,14 @@ export default function SurahScreen() {
                 key={r.id}
                 style={[
                   styles.reciterChip,
-                  active && styles.reciterChipActive,
+                  isLightMode && {
+                    borderColor: tColors.borderStrong,
+                    backgroundColor: tColors.surface,
+                  },
+                  active && (isLightMode ? {
+                    backgroundColor: tColors.surfaceActive,
+                    borderColor: tColors.accent,
+                  } : styles.reciterChipActive),
                 ]}
                 onPress={() => changeReciter(r.id)}
                 hitSlop={{ top: 2, bottom: 2, left: 2, right: 2 }}
@@ -432,7 +586,8 @@ export default function SurahScreen() {
                 <Text
                   style={[
                     styles.reciterChipText,
-                    active && styles.reciterChipTextActive,
+                    isLightMode && { color: tColors.muted },
+                    active && (isLightMode ? { color: tColors.accent } : styles.reciterChipTextActive),
                   ]}
                   numberOfLines={1}
                 >
@@ -450,6 +605,7 @@ export default function SurahScreen() {
         contentContainerStyle={styles.ayahListContent}
         showsVerticalScrollIndicator={false}
         renderItem={renderAyah}
+        extraData={isLightMode}
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={5}
@@ -466,32 +622,54 @@ export default function SurahScreen() {
       >
         <View style={styles.modalOverlay}>
           <TouchableOpacity
-            style={styles.modalBackdrop}
+            style={[
+              styles.modalBackdrop,
+              isLightMode && { backgroundColor: tColors.sheetBackdrop },
+            ]}
             activeOpacity={1}
             onPress={closeTafsir}
             accessibilityRole="button"
             accessibilityLabel="Закрыть затемнение"
           />
-          <View style={styles.sheetContainer}>
-            <View style={styles.sheetHeader}>
+          <View
+            style={[
+              styles.sheetContainer,
+              isLightMode && {
+                backgroundColor: tColors.sheetBg,
+                borderColor: tColors.border,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.sheetHeader,
+                isLightMode && { borderColor: tColors.borderSoft },
+              ]}
+            >
               <View style={styles.sheetTitleWrap}>
-                <Text style={styles.sheetTitle}>
+                <Text style={[styles.sheetTitle, isLightMode && { color: tColors.text }]}>
                   Тафсир ас-Саади
                 </Text>
-                <Text style={styles.sheetAyahBadge}>
+                <Text style={[styles.sheetAyahBadge, isLightMode && { color: tColors.accent }]}>
                   СУРА {surahNumber} · АЯТ {activeTafsir?.ayahNumber}
                 </Text>
               </View>
 
               <TouchableOpacity
-                style={styles.sheetCloseBtn}
+                style={[
+                  styles.sheetCloseBtn,
+                  isLightMode && {
+                    borderColor: tColors.border,
+                    backgroundColor: tColors.numberPillBg,
+                  },
+                ]}
                 onPress={closeTafsir}
                 hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel="Закрыть"
               >
-                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={colors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={tColors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
                   <Path d="M18 6 6 18M6 6l12 12" />
                 </Svg>
               </TouchableOpacity>
@@ -500,25 +678,28 @@ export default function SurahScreen() {
             <View style={styles.sheetBody}>
               {tafsirLoading ? (
                 <View style={styles.sheetCenter}>
-                  <ActivityIndicator size="large" color={colors.accent} />
+                  <ActivityIndicator size="large" color={tColors.accent} />
                 </View>
               ) : tafsirError ? (
                 <View style={styles.sheetCenter}>
-                  <Text style={styles.sheetErrorText}>Не удалось загрузить тафсир</Text>
+                  <Text style={[styles.sheetErrorText, isLightMode && { color: tColors.text }]}>Не удалось загрузить тафсир</Text>
                   <TouchableOpacity
-                    style={styles.sheetRetryBtn}
+                    style={[
+                      styles.sheetRetryBtn,
+                      isLightMode && { borderColor: tColors.accent },
+                    ]}
                     onPress={retryTafsir}
                     hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel="Повторить"
                   >
-                    <Text style={styles.sheetRetryBtnText}>Повторить</Text>
+                    <Text style={[styles.sheetRetryBtnText, isLightMode && { color: tColors.accent }]}>Повторить</Text>
                   </TouchableOpacity>
                 </View>
               ) : !tafsirText ? (
                 <View style={styles.sheetCenter}>
-                  <Text style={styles.sheetEmptyText}>
+                  <Text style={[styles.sheetEmptyText, isLightMode && { color: tColors.muted }]}>
                     Для этого аята отдельного тафсира нет: он может быть включён в комментарий к соседним аятам
                   </Text>
                 </View>
@@ -589,6 +770,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: colors.muted, // #8FA89E
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flexShrink: 0,
+  },
+  themeToggleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.button, // 14
+    borderWidth: 1,
+    borderColor: colors.border, // #243630
+    backgroundColor: colors.surfaceActive, // #1B2F28
+    alignItems: "center",
+    justifyContent: "center",
   },
   translationBlock: {
     alignItems: "flex-end",

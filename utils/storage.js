@@ -16,6 +16,7 @@ const KEYS = {
   MOSQUE_BG: "@prayer_times/show_mosque_bg",
   ADJUSTMENTS: "@prayer_times/adjustments",
   EXTRA_PRAYERS: "@prayer_times/extra_prayers",
+  QURAN_READING_THEME: "@prayer_times/quran_reading_theme",
 };
 
 // --- theme ---
@@ -26,6 +27,22 @@ export async function saveTheme(theme) {
 
 export async function getSavedTheme() {
   return await AsyncStorage.getItem(KEYS.THEME);
+}
+
+// --- quran reading theme (local mode for Quran surah reading screen) ---
+
+export async function saveReadingTheme(theme) {
+  try {
+    await AsyncStorage.setItem(KEYS.QURAN_READING_THEME, theme);
+  } catch (e) {}
+}
+
+export async function getSavedReadingTheme() {
+  try {
+    return await AsyncStorage.getItem(KEYS.QURAN_READING_THEME);
+  } catch (e) {
+    return null;
+  }
 }
 
 // --- mosque background visibility ---
