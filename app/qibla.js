@@ -30,10 +30,10 @@ import { Magnetometer } from "expo-sensors";
 // - Header with "Кибла" title, location pill with GPS status, and info modal button
 // - Status row with GPS state dot + message and manual refresh button
 // - Azimuth banner: "НАПРАВЛЕНИЕ НА КААБУ", large degree reading + gold cardinal marker
-// - Real compass dynamics: the compass card (С, В, Ю, З) rotates so С always tracks magnetic North,
-//   and the golden pointer with Kaaba badge accurately tracks the Kaaba bearing.
-//   When stationary or facing North, pointer points towards South (e.g. 202° Ю).
-//   When facing Mecca, the pointer aims straight ahead (0° on screen) with Ю under the pointer.
+// - Static cardinal dial (С, 0°, В, 90°, Ю, 180°, З, 270°) with the Kaaba badge FIXED at
+//   the exact bearing degrees (e.g. 202° for Derbent / Dagestan).
+// - Movable arrow / beam rotating with device orientation. By rotating the phone, the user
+//   aligns the arrow to connect directly with the Kaaba badge. When aligned, "Кибла найдена" triggers.
 // - Calibration card with infinity symbol (∞)
 // - Quran verse card with book icon, verse quote (Al-Baqarah 2:144), and gold border
 
@@ -128,10 +128,8 @@ export default function QiblaScreen() {
     : 202;
 
   // Native-driven animation values
-  // dialAnim controls the Kaaba needle direction in screen coordinates
-  const dialAnim = useRef(new Animated.Value(initialBearing)).current;
-  // headingAnim controls the dial card rotation (-heading) so North 'С' tracks real North
-  const headingAnim = useRef(new Animated.Value(0)).current;
+  // dialAnim controls the movable arrow rotating with the device heading
+  const dialAnim = useRef(new Animated.Value(0)).current;
   const lockGlow = useRef(new Animated.Value(0)).current;
 
   // Mutable refs for high-frequency sensor updates
@@ -139,9 +137,7 @@ export default function QiblaScreen() {
   const declinationRef = useRef(null);
   const subscriptionRef = useRef(null);
   const lockRef = useRef(null);
-  const freeUnwrappedRef = useRef(initialBearing);
-  const prevScreenAngleRef = useRef(null);
-  const freeHeadingRef = useRef(0);
+  const freeUnwrappedRef = useRef(0);
   const prevHeadingRef = useRef(null);
   const lastTickAtRef = useRef(0);
 
@@ -174,11 +170,6 @@ export default function QiblaScreen() {
     const b = qiblaBearing(effectiveLocation.latitude, effectiveLocation.longitude);
     setBearing(b);
     bearingRef.current = b;
-    // Set initial needle position towards Qibla bearing immediately
-    if (prevScreenAngleRef.current == null) {
-      dialAnim.setValue(b);
-      freeUnwrappedRef.current = b;
-    }
   }, [hasPosition, effectiveLocation?.latitude, effectiveLocation?.longitude]);
 
   // Fetch magnetic declination
@@ -212,10 +203,8 @@ export default function QiblaScreen() {
     }).start();
   };
 
-  const lockBeam = () => {
-    const cur = freeUnwrappedRef.current;
-    const lockedTarget = Math.round(cur / 360) * 360;
-    pushBeamTarget(lockedTarget, LOCK_ANIM_MS, Easing.out(Easing.cubic));
+  const lockBeam = (targetBearing) => {
+    pushBeamTarget(targetBearing, LOCK_ANIM_MS, Easing.out(Easing.cubic));
     Animated.timing(lockGlow, {
       toValue: 1,
       duration: 180,
@@ -248,37 +237,30 @@ export default function QiblaScreen() {
         ? (magnetic + declinationRef.current + 360) % 360
         : magnetic;
 
-    // 1. Rotate the compass card so North 'С' tracks real North
-    const prevH = prevHeadingRef.current;
-    prevHeadingRef.current = trueHeading;
-    if (prevH == null) {
-      freeHeadingRef.current = trueHeading;
-    } else {
-      freeHeadingRef.current += signedDelta(prevH, trueHeading);
-    }
-    Animated.timing(headingAnim, {
-      toValue: -freeHeadingRef.current,
-      duration: trackMs,
-      easing: Easing.linear,
-      useNativeDriver: true,
-    }).start();
+    // Delta between device heading and Kaaba bearing
+    const alignDelta = signedDelta(trueHeading, bearingNow);
 
-    // 2. Rotate the Kaaba pointer to screenAngle = (bearingNow - trueHeading)
-    const screenAngle = (bearingNow - trueHeading + 360) % 360;
-    const prev = prevScreenAngleRef.current;
-    prevScreenAngleRef.current = screenAngle;
+    const prev = prevHeadingRef.current;
+    prevHeadingRef.current = trueHeading;
     if (prev == null) {
-      freeUnwrappedRef.current = screenAngle;
-      pushBeamTarget(screenAngle, trackMs, Easing.linear);
+      freeUnwrappedRef.current = trueHeading;
+      pushBeamTarget(trueHeading, trackMs, Easing.linear);
       if (!lockRef.current) lockRef.current = createLockMachine();
       return;
     }
-    freeUnwrappedRef.current += signedDelta(prev, screenAngle);
+    freeUnwrappedRef.current += signedDelta(prev, trueHeading);
 
-    const wasLocked = lockRef.current ? lockRef.current.locked : false;
-    const locked = lockRef.current.tick(screenAngle);
-    if (!wasLocked && locked) lockBeam();
-    if (wasLocked && !locked) unlockBeam();
+    if (!lockRef.current) lockRef.current = createLockMachine();
+    const wasLocked = lockRef.current.locked;
+    const locked = lockRef.current.tick(alignDelta);
+
+    if (!wasLocked && locked) {
+      // Connect and lock the beam directly onto the Kaaba badge target
+      lockBeam(bearingNow);
+    }
+    if (wasLocked && !locked) {
+      unlockBeam();
+    }
 
     if (locked) return;
 
@@ -305,17 +287,12 @@ export default function QiblaScreen() {
           subscriptionRef.current.remove();
           subscriptionRef.current = null;
         }
-        prevScreenAngleRef.current = null;
         prevHeadingRef.current = null;
       };
     }, [])
   );
 
   const rotateDeg = dialAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "1deg"],
-  });
-  const dialRotateDeg = headingAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "1deg"],
   });
@@ -361,14 +338,13 @@ export default function QiblaScreen() {
     return (
       <View style={styles.compassZone}>
         <View style={styles.compass}>
-          {/* Rotating compass card & scale (rotates so North 'С' tracks physical North) */}
-          <Animated.View
+          {/* Static cardinal dial card & scale */}
+          <View
             style={[
               styles.ring,
               {
                 backgroundColor: "rgba(21, 36, 31, 0.75)",
                 borderColor: colors.border,
-                transform: [{ rotate: dialRotateDeg }],
               },
             ]}
           >
@@ -398,7 +374,7 @@ export default function QiblaScreen() {
               ))}
             </Svg>
 
-            {/* Cardinal Typography Labels on rotating card */}
+            {/* Static Cardinal Typography Labels */}
             <Text style={[styles.cardinalNorth, { color: colors.accent }]}>С</Text>
             <Text style={[styles.deg0, { color: colors.textSecondary }]}>0°</Text>
 
@@ -410,22 +386,16 @@ export default function QiblaScreen() {
 
             <Text style={[styles.cardinalWest, { color: colors.text }]}>З</Text>
             <Text style={[styles.deg270, { color: colors.textSecondary }]}>270°</Text>
-          </Animated.View>
+          </View>
 
-          {/* Rotating Kaaba Pointer & Needle (points towards Mecca) */}
-          <Animated.View style={[styles.beamGroup, { transform: [{ rotate: rotateDeg }] }]}>
-            {/* Soft glow halo when locked */}
-            <Animated.View
-              style={[
-                styles.beamHaloLock,
-                { backgroundColor: colors.accent, opacity: lockHaloOpacity },
-              ]}
-            />
-
-            {/* Golden needle pointer */}
-            <View style={[styles.needleArm, { backgroundColor: colors.accent }]} />
-
-            {/* Kaaba Target marker at outer perimeter */}
+          {/* Fixed Kaaba Target on perimeter at the exact Qibla bearing */}
+          <View
+            style={[
+              styles.kaabaTargetWrapper,
+              { transform: [{ rotate: `${azimuthDegree}deg` }] },
+            ]}
+            pointerEvents="none"
+          >
             <View
               style={[
                 styles.kaabaChip,
@@ -436,6 +406,23 @@ export default function QiblaScreen() {
                 <View style={[styles.kaabaBand, { backgroundColor: colors.accent }]} />
               </View>
             </View>
+          </View>
+
+          {/* Movable Arrow / Beam rotating with device heading */}
+          <Animated.View style={[styles.beamGroup, { transform: [{ rotate: rotateDeg }] }]}>
+            {/* Soft glow halo when locked / aligned */}
+            <Animated.View
+              style={[
+                styles.beamHaloLock,
+                { backgroundColor: colors.accent, opacity: lockHaloOpacity },
+              ]}
+            />
+
+            {/* Golden pointer arm extending from center to perimeter */}
+            <View style={[styles.needleArm, { backgroundColor: colors.accent }]} />
+
+            {/* Pointer arrow tip pointing towards perimeter */}
+            <View style={[styles.needleTip, { borderBottomColor: colors.accent }]} />
           </Animated.View>
 
           {/* Center Hub base and gold pivot cap */}
@@ -905,28 +892,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
   },
-  beamGroup: {
+  kaabaTargetWrapper: {
     position: "absolute",
     left: 32,
     top: 32,
     width: DIAL_SIZE,
     height: DIAL_SIZE,
-  },
-  beamHaloLock: {
-    position: "absolute",
-    left: DIAL_RADIUS - 16,
-    top: 6,
-    width: 32,
-    height: DIAL_RADIUS - 6,
-    borderRadius: 16,
-  },
-  needleArm: {
-    position: "absolute",
-    left: DIAL_RADIUS - 1.5,
-    top: 40,
-    width: 3,
-    height: DIAL_RADIUS - 40,
-    borderRadius: 1.5,
   },
   kaabaChip: {
     position: "absolute",
@@ -952,6 +923,41 @@ const styles = StyleSheet.create({
     height: 4,
     marginTop: 4,
     marginHorizontal: 1.5,
+  },
+  beamGroup: {
+    position: "absolute",
+    left: 32,
+    top: 32,
+    width: DIAL_SIZE,
+    height: DIAL_SIZE,
+  },
+  beamHaloLock: {
+    position: "absolute",
+    left: DIAL_RADIUS - 16,
+    top: 6,
+    width: 32,
+    height: DIAL_RADIUS - 6,
+    borderRadius: 16,
+  },
+  needleArm: {
+    position: "absolute",
+    left: DIAL_RADIUS - 1.5,
+    top: 48,
+    width: 3,
+    height: DIAL_RADIUS - 48,
+    borderRadius: 1.5,
+  },
+  needleTip: {
+    position: "absolute",
+    left: DIAL_RADIUS - 5,
+    top: 40,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderBottomWidth: 8,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
   },
   centerHubBase: {
     position: "absolute",
