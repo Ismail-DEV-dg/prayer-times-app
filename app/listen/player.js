@@ -845,8 +845,8 @@ const styles = StyleSheet.create({
   },
   arabicName: {
     fontFamily: fonts.arabic.bold,
-    fontSize: 24,
-    lineHeight: 40,
+    fontSize: 20,
+    lineHeight: 42,
     color: colors.text,
     textAlign: "right",
   },

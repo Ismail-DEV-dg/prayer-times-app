@@ -392,7 +392,7 @@ export default function SurahScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerTitleWrap}>
-          <Text numberOfLines={1}>
+          <Text style={styles.headerTitleLine} numberOfLines={1}>
             <Text style={styles.titleLatin}>{surah.englishName}</Text>
             <Text style={styles.titleArabic}> · {surah.name}</Text>
           </Text>
@@ -569,16 +569,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 2,
   },
+  headerTitleLine: {
+    lineHeight: 34,
+  },
   titleLatin: {
     fontFamily: fonts.ui.bold,
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 18,
+    lineHeight: 34,
     color: colors.text, // #EDE6D6
   },
   titleArabic: {
     fontFamily: fonts.arabic.bold,
-    fontSize: 22,
-    lineHeight: 32,
+    fontSize: 18,
+    lineHeight: 34,
     color: colors.text,
   },
   subtitle: {
