@@ -17,6 +17,8 @@ const KEYS = {
   ADJUSTMENTS: "@prayer_times/adjustments",
   EXTRA_PRAYERS: "@prayer_times/extra_prayers",
   QURAN_READING_THEME: "@prayer_times/quran_reading_theme",
+  QURAN_TRANSCRIPTION: "@prayer_times/quran_transcription",
+  QURAN_TRANSLATION: "@prayer_times/quran_translation",
 };
 
 // --- theme ---
@@ -42,6 +44,39 @@ export async function getSavedReadingTheme() {
     return await AsyncStorage.getItem(KEYS.QURAN_READING_THEME);
   } catch (e) {
     return null;
+  }
+}
+
+// --- quran transcription (on/off) ---
+
+export async function saveTranscription(enabled) {
+  try {
+    await AsyncStorage.setItem(KEYS.QURAN_TRANSCRIPTION, JSON.stringify(Boolean(enabled)));
+  } catch (e) {}
+}
+
+export async function getSavedTranscription() {
+  try {
+    const val = await AsyncStorage.getItem(KEYS.QURAN_TRANSCRIPTION);
+    return val !== null ? JSON.parse(val) : false;
+  } catch (e) {
+    return false;
+  }
+}
+
+// --- quran selected translation ---
+
+export async function saveSelectedTranslation(id) {
+  try {
+    await AsyncStorage.setItem(KEYS.QURAN_TRANSLATION, id);
+  } catch (e) {}
+}
+
+export async function getSavedSelectedTranslation() {
+  try {
+    return (await AsyncStorage.getItem(KEYS.QURAN_TRANSLATION)) || "ru.kuliev";
+  } catch (e) {
+    return "ru.kuliev";
   }
 }
 

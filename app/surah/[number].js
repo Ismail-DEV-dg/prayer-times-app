@@ -31,6 +31,10 @@ import {
   saveReciter,
   getSavedReadingTheme,
   saveReadingTheme,
+  getSavedTranscription,
+  saveTranscription,
+  getSavedSelectedTranslation,
+  saveSelectedTranslation,
 } from "../../utils/storage";
 
 const DARK_READING_THEME = {
@@ -91,12 +95,25 @@ export default function SurahScreen() {
   const [error, setError] = useState(null);
   const [reciter, setReciter] = useState(DEFAULT_RECITER);
   const [isLightMode, setIsLightMode] = useState(false);
+  const [isTranscriptionOn, setIsTranscriptionOn] = useState(false);
+  const [translationModalVisible, setTranslationModalVisible] = useState(false);
+  const [selectedTranslation, setSelectedTranslation] = useState("ru.kuliev");
 
   useEffect(() => {
     let mounted = true;
     getSavedReadingTheme().then((saved) => {
       if (mounted && saved === "light") {
         setIsLightMode(true);
+      }
+    });
+    getSavedTranscription().then((saved) => {
+      if (mounted && typeof saved === "boolean") {
+        setIsTranscriptionOn(saved);
+      }
+    });
+    getSavedSelectedTranslation().then((saved) => {
+      if (mounted && saved) {
+        setSelectedTranslation(saved);
       }
     });
     return () => {
@@ -108,6 +125,14 @@ export default function SurahScreen() {
     setIsLightMode((prev) => {
       const next = !prev;
       saveReadingTheme(next ? "light" : "dark");
+      return next;
+    });
+  };
+
+  const toggleTranscription = () => {
+    setIsTranscriptionOn((prev) => {
+      const next = !prev;
+      saveTranscription(next);
       return next;
     });
   };
@@ -394,6 +419,19 @@ export default function SurahScreen() {
           {item.arabic}
         </Text>
 
+        {/* Transliteration / transcription */}
+        {isTranscriptionOn && item.transliteration ? (
+          <Text
+            style={[
+              styles.transcriptionText,
+              isLightMode && { color: tColors.muted },
+            ]}
+            selectable
+          >
+            {item.transliteration}
+          </Text>
+        ) : null}
+
         {/* Translation */}
         {item.translation ? (
           <Text
@@ -437,7 +475,7 @@ export default function SurahScreen() {
         )}
       </TouchableOpacity>
     );
-  }, [surahNumber, audio, playAyah, tafsirModalVisible, activeTafsir, openTafsir, isLightMode, tColors]);
+  }, [surahNumber, audio, playAyah, tafsirModalVisible, activeTafsir, openTafsir, isLightMode, tColors, isTranscriptionOn]);
 
   if (loading && !surah) {
     return (
@@ -519,11 +557,12 @@ export default function SurahScreen() {
           </Text>
         </View>
 
-        {/* Right Header Area: Theme Toggle (crescent/sun) + Translation block */}
+        {/* Right Header Area: 3 action buttons (Theme, Transcription, Translation) */}
         <View style={styles.headerRight}>
+          {/* 1. Theme toggle button (moon/sun) */}
           <TouchableOpacity
             style={[
-              styles.themeToggleBtn,
+              styles.headerActionBtn,
               isLightMode && {
                 borderColor: tColors.border,
                 backgroundColor: tColors.surfaceActive,
@@ -547,10 +586,56 @@ export default function SurahScreen() {
             )}
           </TouchableOpacity>
 
-          <View style={styles.translationBlock}>
-            <Text style={[styles.translationLabel, isLightMode && { color: tColors.accent }]}>ПЕРЕВОД</Text>
-            <Text style={[styles.translatorName, isLightMode && { color: tColors.text }]}>Э. Кулиев</Text>
-          </View>
+          {/* 2. Transcription toggle button (Тр) */}
+          <TouchableOpacity
+            style={[
+              styles.headerActionBtn,
+              isTranscriptionOn && styles.headerActionBtnActive,
+              isLightMode && {
+                borderColor: isTranscriptionOn ? tColors.accent : tColors.border,
+                backgroundColor: isTranscriptionOn ? tColors.surfaceActive : tColors.surface,
+              },
+            ]}
+            onPress={toggleTranscription}
+            activeOpacity={0.7}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            accessibilityRole="button"
+            accessibilityLabel={isTranscriptionOn ? "Выключить транскрипцию" : "Включить транскрипцию"}
+          >
+            <Text
+              style={[
+                styles.transcriptionBtnText,
+                { color: isTranscriptionOn ? tColors.accent : (isLightMode ? tColors.muted : colors.muted) },
+              ]}
+            >
+              Тр
+            </Text>
+          </TouchableOpacity>
+
+          {/* 3. Translation selection button */}
+          <TouchableOpacity
+            style={[
+              styles.headerActionBtn,
+              isLightMode && {
+                borderColor: tColors.border,
+                backgroundColor: tColors.surfaceActive,
+              },
+            ]}
+            onPress={() => setTranslationModalVisible(true)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            accessibilityRole="button"
+            accessibilityLabel="Выбрать перевод Корана"
+          >
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={tColors.accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="m5 8 6 6" />
+              <Path d="m4 14 6-6 2-3" />
+              <Path d="M2 5h12" />
+              <Path d="M7 2h1" />
+              <Path d="m22 22-5-10-5 10" />
+              <Path d="M14 18h6" />
+            </Svg>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -605,7 +690,7 @@ export default function SurahScreen() {
         contentContainerStyle={styles.ayahListContent}
         showsVerticalScrollIndicator={false}
         renderItem={renderAyah}
-        extraData={isLightMode}
+        extraData={[isLightMode, isTranscriptionOn]}
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={5}
@@ -716,6 +801,112 @@ export default function SurahScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Translation Selection Bottom Sheet Modal */}
+      <Modal
+        visible={translationModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setTranslationModalVisible(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={[
+              styles.modalBackdrop,
+              isLightMode && { backgroundColor: tColors.sheetBackdrop },
+            ]}
+            activeOpacity={1}
+            onPress={() => setTranslationModalVisible(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Закрыть затемнение"
+          />
+          <View
+            style={[
+              styles.translationSheetContainer,
+              isLightMode && {
+                backgroundColor: tColors.sheetBg,
+                borderColor: tColors.border,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.sheetHeader,
+                isLightMode && { borderColor: tColors.borderSoft },
+              ]}
+            >
+              <View style={styles.sheetTitleWrap}>
+                <Text style={[styles.sheetTitle, isLightMode && { color: tColors.text }]}>
+                  Выбор перевода
+                </Text>
+                <Text style={[styles.sheetAyahBadge, isLightMode && { color: tColors.accent }]}>
+                  СМЫСЛОВОЙ ПЕРЕВОД КОРАНА
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.sheetCloseBtn,
+                  isLightMode && {
+                    borderColor: tColors.border,
+                    backgroundColor: tColors.numberPillBg,
+                  },
+                ]}
+                onPress={() => setTranslationModalVisible(false)}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Закрыть"
+              >
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={tColors.text} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <Path d="M18 6 6 18M6 6l12 12" />
+                </Svg>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.translationSheetBody}>
+              {/* Single translation option: Elmir Kuliev */}
+              <TouchableOpacity
+                style={[
+                  styles.translationRow,
+                  styles.translationRowActive,
+                  isLightMode && {
+                    backgroundColor: tColors.surfaceActive,
+                    borderColor: tColors.accent,
+                  },
+                ]}
+                onPress={() => setTranslationModalVisible(false)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Эльмир Кулиев, выбран"
+              >
+                <View style={styles.translationRowLeft}>
+                  <Text style={[styles.translationRowTitle, isLightMode && { color: tColors.text }]}>
+                    Эльмир Кулиев
+                  </Text>
+                  <Text style={[styles.translationRowDesc, isLightMode && { color: tColors.muted }]}>
+                    Смысловой перевод Священного Корана на русский язык
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.translationCheckmarkCircle,
+                    isLightMode && {
+                      backgroundColor: tColors.accent,
+                    },
+                  ]}
+                >
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={isLightMode ? tColors.onAccent : colors.onAccent} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+                    <Path d="M20 6 9 17l-5-5" />
+                  </Svg>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -774,10 +965,10 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
     flexShrink: 0,
   },
-  themeToggleBtn: {
+  headerActionBtn: {
     width: 38,
     height: 38,
     borderRadius: radii.button, // 14
@@ -787,25 +978,77 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  translationBlock: {
-    alignItems: "flex-end",
-    justifyContent: "center",
-    flexShrink: 0,
-    gap: 2,
+  headerActionBtnActive: {
+    borderColor: colors.accent, // #E3BE72
+    backgroundColor: colors.surfaceActive, // #1B2F28
   },
-  translationLabel: {
-    fontFamily: fonts.ui.semibold,
-    fontSize: 11,
-    lineHeight: 14,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: colors.accent, // #E3BE72
-  },
-  translatorName: {
-    fontFamily: fonts.ui.semibold,
-    fontSize: 14,
+  transcriptionBtnText: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 13,
     lineHeight: 18,
-    color: colors.text, // #EDE6D6
+  },
+  transcriptionText: {
+    fontFamily: fonts.ui.medium,
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.muted, // #8FA89E
+    fontStyle: "italic",
+    textAlign: "left",
+    marginTop: 10,
+  },
+  translationSheetContainer: {
+    backgroundColor: colors.surface, // #15241F
+    borderTopWidth: 1,
+    borderColor: colors.border, // #243630
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 32,
+  },
+  translationSheetBody: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 10,
+  },
+  translationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: radii.row, // 18
+    backgroundColor: colors.surface, // #15241F
+    borderWidth: 1,
+    borderColor: colors.borderSoft, // #1E2E28
+  },
+  translationRowActive: {
+    backgroundColor: colors.surfaceActive, // #1B2F28
+    borderColor: colors.accent, // #E3BE72
+  },
+  translationRowLeft: {
+    flex: 1,
+    paddingRight: 12,
+    gap: 4,
+  },
+  translationRowTitle: {
+    fontFamily: fonts.ui.bold,
+    fontSize: 16,
+    lineHeight: 22,
+    color: colors.text,
+  },
+  translationRowDesc: {
+    fontFamily: fonts.ui.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.muted,
+  },
+  translationCheckmarkCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: radii.pill, // 999
+    backgroundColor: colors.accent, // #E3BE72
+    alignItems: "center",
+    justifyContent: "center",
   },
   reciterRow: {
     paddingBottom: 12,
