@@ -35,6 +35,7 @@ export const fonts = {
   arabic: {
     regular: 'Amiri_400Regular',
     bold: 'Amiri_700Bold',
+    quran: 'AmiriQuran_400Regular',
   },
 };
 

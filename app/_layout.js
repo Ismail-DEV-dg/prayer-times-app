@@ -21,6 +21,7 @@ import {
   Amiri_400Regular,
   Amiri_700Bold,
 } from "@expo-google-fonts/amiri";
+import { AmiriQuran_400Regular } from "@expo-google-fonts/amiri-quran";
 import { ThemeProvider, useTheme } from "../theme/ThemeContext";
 import { AppDataProvider } from "../utils/AppDataContext";
 import BootSplash from "../components/BootSplash";
@@ -125,6 +126,7 @@ export default function RootLayout() {
     CormorantGaramond_600SemiBold,
     Amiri_400Regular,
     Amiri_700Bold,
+    AmiriQuran_400Regular,
   });
 
   useEffect(() => {

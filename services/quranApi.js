@@ -103,8 +103,12 @@ export function isUserInRussia(city = null) {
 // 2. If primary does not respond within primary timeout (2s) or fails early, starts fallback.
 // 3. Whichever succeeds first wins and cancels the other in-flight request using AbortController.
 // 4. Overall timeout (10s) protects against hanging requests.
-function fetchWithFallback({ primary, fallback, totalTimeoutMs = TOTAL_TIMEOUT_MS, label = "QuranText" }) {
+function fetchWithFallback({ primary, fallback, totalTimeoutMs = TOTAL_TIMEOUT_MS, label = "QuranText", externalSignal = null }) {
   return new Promise((resolve, reject) => {
+    if (externalSignal && externalSignal.aborted) {
+      return reject(new Error("ABORTED"));
+    }
+
     let settled = false;
     let fallbackStarted = false;
     const primaryController = new AbortController();
@@ -116,6 +120,22 @@ function fetchWithFallback({ primary, fallback, totalTimeoutMs = TOTAL_TIMEOUT_M
     function cleanup() {
       if (primaryTimer) clearTimeout(primaryTimer);
       if (totalTimer) clearTimeout(totalTimer);
+      if (externalSignal && typeof externalSignal.removeEventListener === "function") {
+        externalSignal.removeEventListener("abort", handleExternalAbort);
+      }
+    }
+
+    function handleExternalAbort() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      primaryController.abort();
+      fallbackController.abort();
+      reject(new Error("ABORTED"));
+    }
+
+    if (externalSignal && typeof externalSignal.addEventListener === "function") {
+      externalSignal.addEventListener("abort", handleExternalAbort);
     }
 
     function handleSuccess(data, sourceName, winnerController, loserController) {
@@ -323,3 +343,100 @@ export function getAyahAudioUrlFallback(globalAyahNumber, reciterId = DEFAULT_RE
   const config = RECITER_FALLBACK_MAP[rec] || { id: "ar.alafasy", bitrate: 128 };
   return `https://cdn.islamic.network/quran/audio/${config.bitrate}/${config.id}/${num}.mp3`;
 }
+
+// Tafsir Resources definition
+export const TAFSIR_RESOURCES = {
+  170: {
+    id: 170,
+    name: "Ас-Саади",
+    language: "ru",
+    quranComId: 170,
+    islamicAppSlug: "ru-tafseer-al-saddi",
+  },
+  169: {
+    id: 169,
+    name: "Ибн Касир",
+    language: "en",
+    quranComId: 169,
+    islamicAppSlug: "en-tafisr-ibn-kathir",
+  },
+};
+
+// Strips HTML tags, converts line breaks, decodes HTML entities and normalizes whitespace
+export function cleanTafsirHtml(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  let str = raw;
+  str = str.replace(/<\/(p|div|h[1-6]|li|blockquote)>/gi, "\n\n");
+  str = str.replace(/<br\s*[\/]?>/gi, "\n");
+  str = str.replace(/<[^>]+>/g, "");
+  const entities = {
+    "&nbsp;": " ",
+    "&amp;": "&",
+    "&quot;": '"',
+    "&#39;": "'",
+    "&apos;": "'",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&laquo;": "«",
+    "&raquo;": "»",
+    "&mdash;": "—",
+    "&ndash;": "–",
+    "&#8217;": "'",
+    "&#8216;": "'",
+    "&#8220;": '"',
+    "&#8221;": '"',
+    "&#8211;": "–",
+    "&#8212;": "—",
+  };
+  str = str.replace(/&[a-zA-Z0-9#]+;/g, (m) => entities[m] || m);
+  str = str.replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+  str = str.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  str = str.replace(/[ \t]+/g, " ");
+  str = str.replace(/\n\s+\n/g, "\n\n");
+  str = str.replace(/\n{3,}/g, "\n\n");
+  return str.trim();
+}
+
+// Fetch Ayah Tafsir with Primary (Quran.com v4) -> Fallback (Islamic.app v1)
+// Primary timeout: 4000ms, total timeout: 10000ms.
+export async function fetchAyahTafsir(resourceId, surahNumber, ayahNumber, signal = null) {
+  const resId = Number(resourceId);
+  const surah = Number(surahNumber);
+  const ayah = Number(ayahNumber);
+  const config = TAFSIR_RESOURCES[resId];
+  if (!config) throw new Error("INVALID_TAFSIR_RESOURCE");
+
+  const primary = {
+    name: "Primary (Quran.com)",
+    fn: async (abortSignal) => {
+      const url = `https://api.quran.com/api/v4/tafsirs/${config.quranComId}/by_ayah/${surah}:${ayah}`;
+      const response = await fetch(url, { signal: abortSignal });
+      if (!response.ok) throw new Error("API_ERROR");
+      const json = await response.json();
+      const raw = json?.tafsir?.text;
+      return cleanTafsirHtml(raw);
+    },
+    timeoutMs: 4000,
+  };
+
+  const fallback = {
+    name: "Fallback (Islamic.app)",
+    fn: async (abortSignal) => {
+      const url = `https://api.islamic.app/v1/quran/tafsirs/${config.islamicAppSlug}?verse_key=${surah}:${ayah}`;
+      const response = await fetch(url, { signal: abortSignal });
+      if (!response.ok) throw new Error("API_ERROR");
+      const json = await response.json();
+      const raw = json?.data?.ayahs?.[0]?.text;
+      return cleanTafsirHtml(raw);
+    },
+  };
+
+  return fetchWithFallback({
+    primary,
+    fallback,
+    totalTimeoutMs: 10000,
+    label: "AyahTafsir",
+    externalSignal: signal,
+  });
+}
+
