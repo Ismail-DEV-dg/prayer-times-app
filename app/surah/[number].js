@@ -31,8 +31,6 @@ import {
   saveReciter,
   getSavedReadingTheme,
   saveReadingTheme,
-  getSavedTranscription,
-  saveTranscription,
   getSavedSelectedTranslation,
   saveSelectedTranslation,
 } from "../../utils/storage";
@@ -95,7 +93,6 @@ export default function SurahScreen() {
   const [error, setError] = useState(null);
   const [reciter, setReciter] = useState(DEFAULT_RECITER);
   const [isLightMode, setIsLightMode] = useState(false);
-  const [isTranscriptionOn, setIsTranscriptionOn] = useState(false);
   const [translationModalVisible, setTranslationModalVisible] = useState(false);
   const [selectedTranslation, setSelectedTranslation] = useState("ru.kuliev");
 
@@ -104,11 +101,6 @@ export default function SurahScreen() {
     getSavedReadingTheme().then((saved) => {
       if (mounted && saved === "light") {
         setIsLightMode(true);
-      }
-    });
-    getSavedTranscription().then((saved) => {
-      if (mounted && typeof saved === "boolean") {
-        setIsTranscriptionOn(saved);
       }
     });
     getSavedSelectedTranslation().then((saved) => {
@@ -125,14 +117,6 @@ export default function SurahScreen() {
     setIsLightMode((prev) => {
       const next = !prev;
       saveReadingTheme(next ? "light" : "dark");
-      return next;
-    });
-  };
-
-  const toggleTranscription = () => {
-    setIsTranscriptionOn((prev) => {
-      const next = !prev;
-      saveTranscription(next);
       return next;
     });
   };
@@ -419,19 +403,6 @@ export default function SurahScreen() {
           {item.arabic}
         </Text>
 
-        {/* Transliteration / transcription */}
-        {isTranscriptionOn && item.transliteration ? (
-          <Text
-            style={[
-              styles.transcriptionText,
-              isLightMode && { color: tColors.muted },
-            ]}
-            selectable
-          >
-            {item.transliteration}
-          </Text>
-        ) : null}
-
         {/* Translation */}
         {item.translation ? (
           <Text
@@ -475,7 +446,7 @@ export default function SurahScreen() {
         )}
       </TouchableOpacity>
     );
-  }, [surahNumber, audio, playAyah, tafsirModalVisible, activeTafsir, openTafsir, isLightMode, tColors, isTranscriptionOn]);
+  }, [surahNumber, audio, playAyah, tafsirModalVisible, activeTafsir, openTafsir, isLightMode, tColors]);
 
   if (loading && !surah) {
     return (
@@ -557,7 +528,7 @@ export default function SurahScreen() {
           </Text>
         </View>
 
-        {/* Right Header Area: 3 action buttons (Theme, Transcription, Translation) */}
+        {/* Right Header Area: action buttons (Theme, Translation) */}
         <View style={styles.headerRight}>
           {/* 1. Theme toggle button (moon/sun) */}
           <TouchableOpacity
@@ -586,33 +557,7 @@ export default function SurahScreen() {
             )}
           </TouchableOpacity>
 
-          {/* 2. Transcription toggle button (Тр) */}
-          <TouchableOpacity
-            style={[
-              styles.headerActionBtn,
-              isTranscriptionOn && styles.headerActionBtnActive,
-              isLightMode && {
-                borderColor: isTranscriptionOn ? tColors.accent : tColors.border,
-                backgroundColor: isTranscriptionOn ? tColors.surfaceActive : tColors.surface,
-              },
-            ]}
-            onPress={toggleTranscription}
-            activeOpacity={0.7}
-            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            accessibilityRole="button"
-            accessibilityLabel={isTranscriptionOn ? "Выключить транскрипцию" : "Включить транскрипцию"}
-          >
-            <Text
-              style={[
-                styles.transcriptionBtnText,
-                { color: isTranscriptionOn ? tColors.accent : (isLightMode ? tColors.muted : colors.muted) },
-              ]}
-            >
-              Тр
-            </Text>
-          </TouchableOpacity>
-
-          {/* 3. Translation selection button */}
+          {/* 2. Translation selection button */}
           <TouchableOpacity
             style={[
               styles.headerActionBtn,
@@ -690,7 +635,7 @@ export default function SurahScreen() {
         contentContainerStyle={styles.ayahListContent}
         showsVerticalScrollIndicator={false}
         renderItem={renderAyah}
-        extraData={[isLightMode, isTranscriptionOn]}
+        extraData={isLightMode}
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={5}
@@ -977,24 +922,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceActive, // #1B2F28
     alignItems: "center",
     justifyContent: "center",
-  },
-  headerActionBtnActive: {
-    borderColor: colors.accent, // #E3BE72
-    backgroundColor: colors.surfaceActive, // #1B2F28
-  },
-  transcriptionBtnText: {
-    fontFamily: fonts.ui.bold,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  transcriptionText: {
-    fontFamily: fonts.ui.medium,
-    fontSize: 14,
-    lineHeight: 22,
-    color: colors.muted, // #8FA89E
-    fontStyle: "italic",
-    textAlign: "left",
-    marginTop: 10,
   },
   translationSheetContainer: {
     backgroundColor: colors.surface, // #15241F

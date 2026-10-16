@@ -28,7 +28,6 @@ const ALISLAM_API_BASE = "https://alquran.api.alislam.ru/v1";
 const ALQURAN_CLOUD_API_BASE = "https://api.alquran.cloud/v1";
 const ARABIC_EDITION = "quran-uthmani";
 const TRANSLATION_EDITION = "ru.kuliev"; // Elmir Kuliev Russian translation
-const TRANSLITERATION_EDITION = "ru.transliteration";
 
 // Reciters verified on CDNs (HTTP 200 on sample ayahs).
 export const RECITERS = [
@@ -235,9 +234,9 @@ async function fetchSurahListFromBase(apiBase, signal) {
   }));
 }
 
-// Fetch single Surah with Arabic text, Russian translation, and transliteration from AlQuran Cloud or AlIslam mirror
+// Fetch single Surah with Arabic text and Russian translation from AlQuran Cloud or AlIslam mirror
 async function fetchSurahFromBase(apiBase, num, signal) {
-  const url = `${apiBase}/surah/${num}/editions/${ARABIC_EDITION},${TRANSLATION_EDITION},${TRANSLITERATION_EDITION}`;
+  const url = `${apiBase}/surah/${num}/editions/${ARABIC_EDITION},${TRANSLATION_EDITION}`;
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error("API_ERROR");
   const json = await response.json();
@@ -247,7 +246,6 @@ async function fetchSurahFromBase(apiBase, num, signal) {
 
   const arabic = json.data[0];
   const translation = json.data[1];
-  const transliteration = json.data[2] || null;
   const ayahCount = arabic.ayahs.length;
   if (ayahCount === 0 || translation.ayahs.length !== ayahCount) {
     throw new Error("API_ERROR");
@@ -255,14 +253,12 @@ async function fetchSurahFromBase(apiBase, num, signal) {
 
   const ayahs = arabic.ayahs.map((a, i) => {
     const t = translation.ayahs[i];
-    const tr = transliteration?.ayahs?.[i];
     if (t.numberInSurah !== a.numberInSurah) throw new Error("API_ERROR");
     return {
       numberInSurah: a.numberInSurah,
       globalNumber: a.number,
       arabic: a.text,
       translation: t.text || "",
-      transliteration: tr?.text ? tr.text.replace(/\s+/g, " ").trim() : "",
       page: a.page || null,
     };
   });
