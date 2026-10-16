@@ -30,8 +30,10 @@ import { Magnetometer } from "expo-sensors";
 // - Header with "Кибла" title, location pill with GPS status, and info modal button
 // - Status row with GPS state dot + message and manual refresh button
 // - Azimuth banner: "НАПРАВЛЕНИЕ НА КААБУ", large degree reading + gold cardinal marker
-// - Concentric dark compass dial with ticks, inner dashed ring, cardinal points (С, В, Ю, З),
-//   golden pointer needle, Kaaba target badge, and center gold pivot hub
+// - Real compass dynamics: the compass card (С, В, Ю, З) rotates so С always tracks magnetic North,
+//   and the golden pointer with Kaaba badge accurately tracks the Kaaba bearing.
+//   When stationary or facing North, pointer points towards South (e.g. 202° Ю).
+//   When facing Mecca, the pointer aims straight ahead (0° on screen) with Ю under the pointer.
 // - Calibration card with infinity symbol (∞)
 // - Quran verse card with book icon, verse quote (Al-Baqarah 2:144), and gold border
 
@@ -107,19 +109,6 @@ export default function QiblaScreen() {
   const [sensorAvailable, setSensorAvailable] = useState(null);
   const [infoModalVisible, setInfoModalVisible] = useState(false);
 
-  // Native-driven animation values
-  const dialAnim = useRef(new Animated.Value(0)).current;
-  const lockGlow = useRef(new Animated.Value(0)).current;
-
-  // Mutable refs for high-frequency sensor updates
-  const bearingRef = useRef(null);
-  const declinationRef = useRef(null);
-  const subscriptionRef = useRef(null);
-  const lockRef = useRef(null);
-  const freeUnwrappedRef = useRef(0);
-  const prevScreenAngleRef = useRef(null);
-  const lastTickAtRef = useRef(0);
-
   // Active position: live GPS coordinates take priority; selectedCity serves as instant fallback
   const effectiveLocation =
     currentLocation && Number.isFinite(currentLocation.latitude) && Number.isFinite(currentLocation.longitude)
@@ -133,6 +122,28 @@ export default function QiblaScreen() {
       Number.isFinite(effectiveLocation.latitude) &&
       Number.isFinite(effectiveLocation.longitude)
   );
+
+  const initialBearing = effectiveLocation
+    ? Math.round(qiblaBearing(effectiveLocation.latitude, effectiveLocation.longitude))
+    : 202;
+
+  // Native-driven animation values
+  // dialAnim controls the Kaaba needle direction in screen coordinates
+  const dialAnim = useRef(new Animated.Value(initialBearing)).current;
+  // headingAnim controls the dial card rotation (-heading) so North 'С' tracks real North
+  const headingAnim = useRef(new Animated.Value(0)).current;
+  const lockGlow = useRef(new Animated.Value(0)).current;
+
+  // Mutable refs for high-frequency sensor updates
+  const bearingRef = useRef(initialBearing);
+  const declinationRef = useRef(null);
+  const subscriptionRef = useRef(null);
+  const lockRef = useRef(null);
+  const freeUnwrappedRef = useRef(initialBearing);
+  const prevScreenAngleRef = useRef(null);
+  const freeHeadingRef = useRef(0);
+  const prevHeadingRef = useRef(null);
+  const lastTickAtRef = useRef(0);
 
   // Request fresh location every time user enters the Qibla screen
   const requestGpsLocation = useCallback(async () => {
@@ -163,6 +174,11 @@ export default function QiblaScreen() {
     const b = qiblaBearing(effectiveLocation.latitude, effectiveLocation.longitude);
     setBearing(b);
     bearingRef.current = b;
+    // Set initial needle position towards Qibla bearing immediately
+    if (prevScreenAngleRef.current == null) {
+      dialAnim.setValue(b);
+      freeUnwrappedRef.current = b;
+    }
   }, [hasPosition, effectiveLocation?.latitude, effectiveLocation?.longitude]);
 
   // Fetch magnetic declination
@@ -219,8 +235,7 @@ export default function QiblaScreen() {
   };
 
   const handleSensorTick = (data) => {
-    const bearingNow = bearingRef.current;
-    if (bearingNow == null) return;
+    const bearingNow = bearingRef.current != null ? bearingRef.current : 202;
 
     const now = Date.now();
     const dt = lastTickAtRef.current ? now - lastTickAtRef.current : SENSOR_INTERVAL_MS;
@@ -232,8 +247,24 @@ export default function QiblaScreen() {
       declinationRef.current != null
         ? (magnetic + declinationRef.current + 360) % 360
         : magnetic;
-    const screenAngle = (bearingNow - trueHeading + 360) % 360;
 
+    // 1. Rotate the compass card so North 'С' tracks real North
+    const prevH = prevHeadingRef.current;
+    prevHeadingRef.current = trueHeading;
+    if (prevH == null) {
+      freeHeadingRef.current = trueHeading;
+    } else {
+      freeHeadingRef.current += signedDelta(prevH, trueHeading);
+    }
+    Animated.timing(headingAnim, {
+      toValue: -freeHeadingRef.current,
+      duration: trackMs,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    }).start();
+
+    // 2. Rotate the Kaaba pointer to screenAngle = (bearingNow - trueHeading)
+    const screenAngle = (bearingNow - trueHeading + 360) % 360;
     const prev = prevScreenAngleRef.current;
     prevScreenAngleRef.current = screenAngle;
     if (prev == null) {
@@ -274,11 +305,17 @@ export default function QiblaScreen() {
           subscriptionRef.current.remove();
           subscriptionRef.current = null;
         }
+        prevScreenAngleRef.current = null;
+        prevHeadingRef.current = null;
       };
     }, [])
   );
 
   const rotateDeg = dialAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "1deg"],
+  });
+  const dialRotateDeg = headingAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "1deg"],
   });
@@ -324,11 +361,15 @@ export default function QiblaScreen() {
     return (
       <View style={styles.compassZone}>
         <View style={styles.compass}>
-          {/* Static dial card & scale */}
-          <View
+          {/* Rotating compass card & scale (rotates so North 'С' tracks physical North) */}
+          <Animated.View
             style={[
               styles.ring,
-              { backgroundColor: "rgba(21, 36, 31, 0.75)", borderColor: colors.border },
+              {
+                backgroundColor: "rgba(21, 36, 31, 0.75)",
+                borderColor: colors.border,
+                transform: [{ rotate: dialRotateDeg }],
+              },
             ]}
           >
             <Svg width={DIAL_SIZE} height={DIAL_SIZE} style={StyleSheet.absoluteFill}>
@@ -357,7 +398,7 @@ export default function QiblaScreen() {
               ))}
             </Svg>
 
-            {/* Cardinal Typography Labels */}
+            {/* Cardinal Typography Labels on rotating card */}
             <Text style={[styles.cardinalNorth, { color: colors.accent }]}>С</Text>
             <Text style={[styles.deg0, { color: colors.textSecondary }]}>0°</Text>
 
@@ -369,9 +410,9 @@ export default function QiblaScreen() {
 
             <Text style={[styles.cardinalWest, { color: colors.text }]}>З</Text>
             <Text style={[styles.deg270, { color: colors.textSecondary }]}>270°</Text>
-          </View>
+          </Animated.View>
 
-          {/* Rotating Beam and Kaaba Pointer (native-driven) */}
+          {/* Rotating Kaaba Pointer & Needle (points towards Mecca) */}
           <Animated.View style={[styles.beamGroup, { transform: [{ rotate: rotateDeg }] }]}>
             {/* Soft glow halo when locked */}
             <Animated.View
