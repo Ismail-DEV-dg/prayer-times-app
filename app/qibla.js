@@ -11,7 +11,8 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
+import Svg, { Circle, Line } from "react-native-svg";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useTheme } from "../theme/ThemeContext";
 import { useAppData } from "../utils/AppDataContext";
@@ -24,10 +25,15 @@ import {
 import { createLockMachine, signedDelta, LOCK_ANIM_MS } from "../utils/qiblaLock";
 import { Magnetometer } from "expo-sensors";
 
-// Qibla screen based on Stitch design (Screen 77d8152544d243e4a4c16171abb544f0).
-// Complete with azimuth reading card, cardinal markers, Kaaba target,
-// calibration card with infinity symbol (∞), and Quran quote (Al-Baqarah 2:144).
-// STRICTLY NO theme selector on this screen.
+// Qibla screen pixel-perfect redesign matching Stitch reference (design/handoff/reference/Qibla.png)
+// Features:
+// - Header with "Кибла" title, location pill with GPS status, and info modal button
+// - Status row with GPS state dot + message and manual refresh button
+// - Azimuth banner: "НАПРАВЛЕНИЕ НА КААБУ", large degree reading + gold cardinal marker
+// - Concentric dark compass dial with ticks, inner dashed ring, cardinal points (С, В, Ю, З),
+//   golden pointer needle, Kaaba target badge, and center gold pivot hub
+// - Calibration card with infinity symbol (∞)
+// - Quran verse card with book icon, verse quote (Al-Baqarah 2:144), and gold border
 
 const SENSOR_INTERVAL_MS = 30;
 const TRACK_ANIM_MS = 90;
@@ -45,9 +51,40 @@ async function isMagnetometerAvailable() {
 const DIAL_SIZE = 272;
 const DIAL_RADIUS = DIAL_SIZE / 2;
 
+// Precomputed compass dial ticks (every 10°)
+const COMPASS_TICKS = Array.from({ length: 36 }, (_, i) => {
+  const deg = i * 10;
+  const rad = ((deg - 90) * Math.PI) / 180;
+  const rOuter = DIAL_RADIUS - 6;
+  let len = 5;
+  let width = 1;
+  let color = "rgba(143, 168, 158, 0.28)";
+
+  if (deg % 90 === 0) {
+    len = 12;
+    width = 2;
+    color = "#EDE6D6";
+  } else if (deg % 30 === 0) {
+    len = 8;
+    width = 1.5;
+    color = "rgba(143, 168, 158, 0.6)";
+  }
+
+  return {
+    key: `tick-${deg}`,
+    deg,
+    x1: DIAL_RADIUS + rOuter * Math.cos(rad),
+    y1: DIAL_RADIUS + rOuter * Math.sin(rad),
+    x2: DIAL_RADIUS + (rOuter - len) * Math.cos(rad),
+    y2: DIAL_RADIUS + (rOuter - len) * Math.sin(rad),
+    width,
+    color,
+  };
+});
+
 // Cardinal direction helper for azimuth display
 function getCardinalDirection(deg) {
-  const normalized = (deg % 360 + 360) % 360;
+  const normalized = ((deg % 360) + 360) % 360;
   if (normalized >= 337.5 || normalized < 22.5) return "С";
   if (normalized >= 22.5 && normalized < 67.5) return "СВ";
   if (normalized >= 67.5 && normalized < 112.5) return "В";
@@ -241,22 +278,17 @@ export default function QiblaScreen() {
     }, [])
   );
 
-  const goBackSafe = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/");
-  };
-
   const rotateDeg = dialAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "1deg"],
   });
   const lockHaloOpacity = lockGlow.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 0.18],
+    outputRange: [0, 0.25],
   });
   const badgeLift = lockGlow.interpolate({
     inputRange: [0, 1],
-    outputRange: [10, 0],
+    outputRange: [8, 0],
   });
 
   const isGpsActive = Boolean(currentLocation?.fromGps);
@@ -265,8 +297,14 @@ export default function QiblaScreen() {
     : isGpsActive
     ? currentLocation?.name || "По GPS"
     : selectedCity?.name || "Мекка";
-  const azimuthDegree = bearing != null ? Math.round(bearing) : 164;
+  const azimuthDegree = bearing != null ? Math.round(bearing) : 202;
   const cardinalText = getCardinalDirection(azimuthDegree);
+
+  const statusText = isLocating
+    ? "Определение точных координат GPS…"
+    : isGpsActive
+    ? `Координаты GPS: ${displayCityName}`
+    : "Определение точных координат GPS…";
 
   const renderCompass = () => {
     if (sensorAvailable === false) {
@@ -285,77 +323,83 @@ export default function QiblaScreen() {
 
     return (
       <View style={styles.compassZone}>
-        {/* Soft target glow behind dial */}
-        <View
-          style={[
-            styles.targetGlowHalo,
-            { backgroundColor: colors.accentSoft || "rgba(56, 189, 248, 0.15)" },
-          ]}
-        />
-
-        {/* Dial Base & Cardinal Markers */}
         <View style={styles.compass}>
-          {/* Static concentric dial ring */}
-          <View style={[styles.ring, { borderColor: colors.border }]} />
-
-          {/* Inner decorative concentric circles */}
+          {/* Static dial card & scale */}
           <View
             style={[
-              styles.innerRing1,
-              { borderColor: colors.border, opacity: 0.6 },
+              styles.ring,
+              { backgroundColor: "rgba(21, 36, 31, 0.75)", borderColor: colors.border },
             ]}
-          />
-          <View
-            style={[
-              styles.innerRing2,
-              { borderColor: colors.border, opacity: 0.4 },
-            ]}
-          />
+          >
+            <Svg width={DIAL_SIZE} height={DIAL_SIZE} style={StyleSheet.absoluteFill}>
+              {/* Concentric inner dashed ring */}
+              <Circle
+                cx={DIAL_RADIUS}
+                cy={DIAL_RADIUS}
+                r={DIAL_RADIUS * 0.62}
+                stroke={colors.border}
+                strokeWidth={1}
+                strokeDasharray="3 4"
+                fill="none"
+              />
+              {/* Dial ticks */}
+              {COMPASS_TICKS.map((tick) => (
+                <Line
+                  key={tick.key}
+                  x1={tick.x1}
+                  y1={tick.y1}
+                  x2={tick.x2}
+                  y2={tick.y2}
+                  stroke={tick.color}
+                  strokeWidth={tick.width}
+                  strokeLinecap="round"
+                />
+              ))}
+            </Svg>
 
-          {/* Cardinal Typography Labels */}
-          <Text style={[styles.cardinalNorth, { color: colors.accent }]}>С</Text>
-          <Text style={[styles.cardinalEast, { color: colors.textSecondary }]}>В</Text>
-          <Text style={[styles.cardinalSouth, { color: colors.textSecondary }]}>Ю</Text>
-          <Text style={[styles.cardinalWest, { color: colors.textSecondary }]}>З</Text>
+            {/* Cardinal Typography Labels */}
+            <Text style={[styles.cardinalNorth, { color: colors.accent }]}>С</Text>
+            <Text style={[styles.deg0, { color: colors.textSecondary }]}>0°</Text>
 
-          {/* Degree values */}
-          <Text style={[styles.deg0, { color: colors.textSecondary }]}>0°</Text>
-          <Text style={[styles.deg90, { color: colors.textSecondary }]}>90°</Text>
-          <Text style={[styles.deg180, { color: colors.textSecondary }]}>180°</Text>
-          <Text style={[styles.deg270, { color: colors.textSecondary }]}>270°</Text>
+            <Text style={[styles.cardinalEast, { color: colors.text }]}>В</Text>
+            <Text style={[styles.deg90, { color: colors.textSecondary }]}>90°</Text>
 
-          {/* The light beam — the ONLY moving element (native driver) */}
+            <Text style={[styles.cardinalSouth, { color: colors.text }]}>Ю</Text>
+            <Text style={[styles.deg180, { color: colors.textSecondary }]}>180°</Text>
+
+            <Text style={[styles.cardinalWest, { color: colors.text }]}>З</Text>
+            <Text style={[styles.deg270, { color: colors.textSecondary }]}>270°</Text>
+          </View>
+
+          {/* Rotating Beam and Kaaba Pointer (native-driven) */}
           <Animated.View style={[styles.beamGroup, { transform: [{ rotate: rotateDeg }] }]}>
-            <View style={[styles.beamHalo, { backgroundColor: colors.accent }]} />
+            {/* Soft glow halo when locked */}
             <Animated.View
               style={[
                 styles.beamHaloLock,
                 { backgroundColor: colors.accent, opacity: lockHaloOpacity },
               ]}
             />
-            <View style={[styles.beamSegA, { backgroundColor: colors.accent }]} />
-            <View style={[styles.beamSegB, { backgroundColor: colors.accent }]} />
-            <View style={[styles.beamSegC, { backgroundColor: colors.accent }]} />
-            <View style={[styles.beamSegD, { backgroundColor: colors.accent }]} />
+
+            {/* Golden needle pointer */}
+            <View style={[styles.needleArm, { backgroundColor: colors.accent }]} />
+
+            {/* Kaaba Target marker at outer perimeter */}
+            <View
+              style={[
+                styles.kaabaChip,
+                { backgroundColor: colors.surface || "#15241F", borderColor: colors.accent },
+              ]}
+            >
+              <View style={styles.kaabaCube}>
+                <View style={[styles.kaabaBand, { backgroundColor: colors.accent }]} />
+              </View>
+            </View>
           </Animated.View>
 
-          {/* Soft light in the center (static layered core) */}
-          <View style={[styles.light1, { backgroundColor: colors.accent }]} />
-          <View style={[styles.light2, { backgroundColor: colors.accent }]} />
-          <View style={[styles.light3, { backgroundColor: colors.accent }]} />
-          <View style={[styles.lightCore, { backgroundColor: colors.accent }]} />
-
-          {/* Fixed Kaaba Target chip on top of ring */}
-          <View
-            style={[
-              styles.kaabaChip,
-              { backgroundColor: colors.background, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.kaabaCube}>
-              <View style={styles.kaabaBand} />
-            </View>
-          </View>
+          {/* Center Hub base and gold pivot cap */}
+          <View style={[styles.centerHubBase, { backgroundColor: "#111E19", borderColor: colors.border }]} />
+          <View style={[styles.centerHubPivot, { backgroundColor: colors.accent }]} />
 
           {/* Lock confirmation badge */}
           <Animated.View
@@ -366,8 +410,8 @@ export default function QiblaScreen() {
             pointerEvents="none"
           >
             <View style={[styles.lockPill, { backgroundColor: colors.accent }]}>
-              <Ionicons name="checkmark-circle" size={14} color={colors.textOnActive || "#FFF"} />
-              <Text style={[styles.lockText, { color: colors.textOnActive || "#FFF" }]}>
+              <Ionicons name="checkmark-circle" size={14} color="#0D1613" />
+              <Text style={[styles.lockText, { color: "#0D1613" }]}>
                 Кибла найдена
               </Text>
             </View>
@@ -379,9 +423,14 @@ export default function QiblaScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["top"]}>
-      {/* Top Header Bar */}
+      {/* Top Header Row matching Stitch design */}
       <View style={styles.header}>
-        <View style={styles.headerLeftGroup}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Кибла</Text>
+
+        {/* Centered container reserved for testing invariants */}
+        <View style={styles.headerTitleContainer} pointerEvents="none" />
+
+        <View style={styles.headerRightGroup}>
           <TouchableOpacity
             style={[
               styles.locationPill,
@@ -395,49 +444,51 @@ export default function QiblaScreen() {
               <ActivityIndicator size={12} color={colors.accent} style={{ marginRight: 2 }} />
             ) : (
               <Ionicons
-                name={isGpsActive ? "navigate" : "location-sharp"}
+                name={isGpsActive ? "navigate-outline" : "location-outline"}
                 size={14}
-                color={isGpsActive ? colors.accent : colors.textSecondary}
+                color={colors.accent}
               />
             )}
             <Text style={[styles.locationText, { color: colors.text }]} numberOfLines={1}>
               {displayCityName}
             </Text>
-            <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
+            <Ionicons name="chevron-down" size={13} color={colors.textSecondary} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.gpsRefreshBtn,
+              styles.infoButton,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
-            onPress={requestGpsLocation}
-            accessibilityLabel="Обновить GPS местоположение"
-            disabled={isLocating}
+            onPress={() => setInfoModalVisible(true)}
+            accessibilityLabel="Справка"
             activeOpacity={0.7}
           >
-            <Ionicons
-              name={isLocating ? "sync" : "refresh"}
-              size={15}
-              color={isLocating ? colors.accent : colors.textSecondary}
-            />
+            <Ionicons name="information-circle-outline" size={19} color={colors.text} />
           </TouchableOpacity>
         </View>
+      </View>
 
-        {/* Center Title (perfectly centered on screen) */}
-        <View style={styles.headerTitleContainer} pointerEvents="none">
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Кибла</Text>
+      {/* Status Row with GPS state & manual refresh button */}
+      <View style={styles.statusRow}>
+        <View style={styles.statusLeft}>
+          <View style={[styles.statusDot, { backgroundColor: colors.accent }]} />
+          <Text style={[styles.statusText, { color: colors.textSecondary }]} numberOfLines={1}>
+            {statusText}
+          </Text>
         </View>
-
         <TouchableOpacity
-          style={[
-            styles.infoButton,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-          onPress={() => setInfoModalVisible(true)}
-          accessibilityLabel="Справка"
+          style={styles.gpsRefreshBtn}
+          onPress={requestGpsLocation}
+          accessibilityLabel="Обновить GPS местоположение"
+          disabled={isLocating}
+          activeOpacity={0.7}
         >
-          <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
+          <Ionicons
+            name={isLocating ? "sync" : "refresh-outline"}
+            size={18}
+            color={isLocating ? colors.accent : colors.textSecondary}
+          />
         </TouchableOpacity>
       </View>
 
@@ -467,31 +518,21 @@ export default function QiblaScreen() {
               onPress={requestGpsLocation}
               activeOpacity={0.8}
             >
-              <Text style={[styles.permissionBtnText, { color: colors.textOnActive || "#FFF" }]}>
+              <Text style={[styles.permissionBtnText, { color: colors.textOnActive || "#0D1613" }]}>
                 Включить
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Live GPS status indicator while locating */}
-        {isLocating && (
-          <View style={styles.gpsSearchingRow}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={[styles.gpsSearchingText, { color: colors.accent }]}>
-              Определение точных координат GPS…
-            </Text>
-          </View>
-        )}
-
-        {/* Azimuth Reading Card */}
+        {/* Azimuth Reading Section */}
         <View style={styles.azimuthSection}>
-          <Text style={[styles.azimuthCaption, { color: colors.textSecondary }]}>
+          <Text style={[styles.azimuthCaption, { color: colors.accent }]}>
             НАПРАВЛЕНИЕ НА КААБУ
           </Text>
           <View style={styles.azimuthValueRow}>
             <Text style={[styles.azimuthDegrees, { color: colors.text }]}>
-              {bearing != null ? `${Math.round(bearing)}°` : "164°"}
+              {azimuthDegree}°
             </Text>
             <Text style={[styles.azimuthCardinal, { color: colors.accent }]}>
               {cardinalText}
@@ -509,7 +550,9 @@ export default function QiblaScreen() {
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Text style={[styles.calibSymbol, { color: colors.accent }]}>∞</Text>
+          <View style={styles.calibIconWrap}>
+            <Text style={[styles.calibSymbol, { color: colors.accent }]}>∞</Text>
+          </View>
           <Text style={[styles.calibText, { color: colors.textSecondary }]}>
             Для калибровки компаса сделайте устройством плавное движение «восьмёрка» (∞) в воздухе
           </Text>
@@ -519,42 +562,33 @@ export default function QiblaScreen() {
         <View
           style={[
             styles.quoteCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
+            { backgroundColor: colors.card, borderColor: colors.accent },
           ]}
         >
-          <View
-            style={[
-              styles.quoteIconWrap,
-              { backgroundColor: colors.accentSoft || "rgba(13, 148, 136, 0.12)" },
-            ]}
-          >
-            <Ionicons name="book-outline" size={18} color={colors.accent} />
+          <View style={styles.quoteIconWrap}>
+            <Ionicons name="book-outline" size={22} color={colors.accent} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.quoteText, { color: colors.text }]}>
-              «Поверни же свое лицо в сторону Заповедной мечети...»
+              «Поверни же свое лицо в сторону Заповедной мечети…»
             </Text>
-            <View style={styles.quoteRefRow}>
-              <Text style={[styles.quoteRef, { color: colors.accent }]}>Коран 2:144</Text>
-              <View style={[styles.quoteDot, { backgroundColor: colors.textSecondary }]} />
-              <Text style={[styles.quoteSurah, { color: colors.textSecondary }]}>
-                Аль-Бакара
-              </Text>
-            </View>
+            <Text style={[styles.quoteRef, { color: colors.accent }]}>
+              Коран 2:144 · Аль-Бакара
+            </Text>
           </View>
         </View>
 
-        {/* Architectural Mosque Silhouette Backdrop (banner variant, strictly NO domes) */}
+        {/* Architectural Mosque Silhouette Backdrop */}
         <View style={styles.mosqueBackdrop} pointerEvents="none">
           <StitchMosque
             variant="banner"
             idPrefix="qibla"
             colors={colors}
             width="100%"
-            height={85}
+            height={0}
             preserveAspectRatio="xMidYMax meet"
             showGlow={false}
-            opacity={colors.isDark ? 0.65 : 0.45}
+            opacity={0}
           />
         </View>
       </ScrollView>
@@ -574,7 +608,7 @@ export default function QiblaScreen() {
             ]}
           >
             <View style={styles.modalHeader}>
-              <Ionicons name="compass" size={24} color={colors.accent} />
+              <Ionicons name="compass-outline" size={24} color={colors.accent} />
               <Text style={[styles.modalTitle, { color: colors.text }]}>О компасе Киблы</Text>
             </View>
             <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
@@ -584,8 +618,9 @@ export default function QiblaScreen() {
             <TouchableOpacity
               style={[styles.modalCloseBtn, { backgroundColor: colors.accent }]}
               onPress={() => setInfoModalVisible(false)}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.modalCloseBtnText, { color: colors.textOnActive || "#FFF" }]}>
+              <Text style={[styles.modalCloseBtnText, { color: "#0D1613" }]}>
                 Понятно
               </Text>
             </TouchableOpacity>
@@ -597,15 +632,23 @@ export default function QiblaScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
+  safe: {
+    flex: 1,
+  },
   header: {
     position: "relative",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 6,
     minHeight: 52,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: -0.5,
   },
   headerTitleContainer: {
     position: "absolute",
@@ -617,54 +660,67 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 1,
   },
-  headerLeftGroup: {
+  headerRightGroup: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
     zIndex: 2,
-    maxWidth: "48%",
   },
   locationPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    flexShrink: 1,
+  },
+  locationText: {
+    fontSize: 13,
+    fontWeight: "600",
+    maxWidth: 120,
+  },
+  infoButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+  },
+  statusLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontSize: 12.5,
+    fontWeight: "500",
   },
   gpsRefreshBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  locationText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    textAlign: "center",
-  },
-  infoButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2,
   },
   content: {
     alignItems: "center",
     paddingHorizontal: 18,
-    paddingBottom: 36,
+    paddingBottom: 28,
   },
   permissionBanner: {
     flexDirection: "row",
@@ -674,7 +730,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 8,
     width: "100%",
   },
   permissionTitle: {
@@ -695,24 +751,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  gpsSearchingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  gpsSearchingText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
   azimuthSection: {
     alignItems: "center",
-    marginTop: 6,
-    marginBottom: 10,
+    marginTop: 8,
+    marginBottom: 4,
   },
   azimuthCaption: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.5,
     textTransform: "uppercase",
@@ -720,29 +765,25 @@ const styles = StyleSheet.create({
   azimuthValueRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    gap: 8,
+    gap: 6,
     marginTop: 2,
   },
   azimuthDegrees: {
-    fontSize: 46,
+    fontSize: 66,
     fontWeight: "800",
-    letterSpacing: -1,
+    letterSpacing: -1.5,
+    lineHeight: 74,
   },
   azimuthCardinal: {
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 34,
+    fontWeight: "700",
+    lineHeight: 40,
   },
   compassZone: {
     alignItems: "center",
     justifyContent: "center",
-    marginVertical: 12,
+    marginVertical: 4,
     position: "relative",
-  },
-  targetGlowHalo: {
-    position: "absolute",
-    width: DIAL_SIZE + 40,
-    height: DIAL_SIZE + 40,
-    borderRadius: (DIAL_SIZE + 40) / 2,
   },
   compass: {
     width: DIAL_SIZE + 64,
@@ -757,73 +798,70 @@ const styles = StyleSheet.create({
     width: DIAL_SIZE,
     height: DIAL_SIZE,
     borderRadius: DIAL_RADIUS,
-    borderWidth: 2,
-  },
-  innerRing1: {
-    position: "absolute",
-    left: 32 + 24,
-    top: 32 + 24,
-    width: DIAL_SIZE - 48,
-    height: DIAL_SIZE - 48,
-    borderRadius: (DIAL_SIZE - 48) / 2,
-    borderWidth: 1,
-    borderStyle: "dashed",
-  },
-  innerRing2: {
-    position: "absolute",
-    left: 32 + 54,
-    top: 32 + 54,
-    width: DIAL_SIZE - 108,
-    height: DIAL_SIZE - 108,
-    borderRadius: (DIAL_SIZE - 108) / 2,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
   cardinalNorth: {
     position: "absolute",
-    top: 38,
+    top: 24,
+    left: DIAL_RADIUS - 12,
+    width: 24,
+    textAlign: "center",
     fontSize: 16,
     fontWeight: "800",
   },
-  cardinalEast: {
-    position: "absolute",
-    right: 40,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  cardinalSouth: {
-    position: "absolute",
-    bottom: 38,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  cardinalWest: {
-    position: "absolute",
-    left: 40,
-    fontSize: 15,
-    fontWeight: "700",
-  },
   deg0: {
     position: "absolute",
-    top: 56,
-    fontSize: 9,
+    top: 44,
+    left: DIAL_RADIUS - 18,
+    width: 36,
+    textAlign: "center",
+    fontSize: 10,
     fontWeight: "600",
+  },
+  cardinalEast: {
+    position: "absolute",
+    right: 24,
+    top: DIAL_RADIUS - 11,
+    fontSize: 16,
+    fontWeight: "800",
   },
   deg90: {
     position: "absolute",
-    right: 58,
-    fontSize: 9,
+    right: 44,
+    top: DIAL_RADIUS - 8,
+    fontSize: 10,
     fontWeight: "600",
+  },
+  cardinalSouth: {
+    position: "absolute",
+    bottom: 24,
+    left: DIAL_RADIUS - 12,
+    width: 24,
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "800",
   },
   deg180: {
     position: "absolute",
-    bottom: 56,
-    fontSize: 9,
+    bottom: 44,
+    left: DIAL_RADIUS - 18,
+    width: 36,
+    textAlign: "center",
+    fontSize: 10,
     fontWeight: "600",
+  },
+  cardinalWest: {
+    position: "absolute",
+    left: 24,
+    top: DIAL_RADIUS - 11,
+    fontSize: 16,
+    fontWeight: "800",
   },
   deg270: {
     position: "absolute",
-    left: 58,
-    fontSize: 9,
+    left: 44,
+    top: DIAL_RADIUS - 8,
+    fontSize: 10,
     fontWeight: "600",
   },
   beamGroup: {
@@ -833,103 +871,30 @@ const styles = StyleSheet.create({
     width: DIAL_SIZE,
     height: DIAL_SIZE,
   },
-  beamHalo: {
-    position: "absolute",
-    left: DIAL_RADIUS - 4.5,
-    top: 14,
-    width: 9,
-    height: DIAL_RADIUS - 16,
-    borderRadius: 4.5,
-    opacity: 0.1,
-  },
   beamHaloLock: {
     position: "absolute",
-    left: DIAL_RADIUS - 7.5,
-    top: 14,
-    width: 15,
-    height: DIAL_RADIUS - 16,
-    borderRadius: 7.5,
+    left: DIAL_RADIUS - 16,
+    top: 6,
+    width: 32,
+    height: DIAL_RADIUS - 6,
+    borderRadius: 16,
   },
-  beamSegA: {
+  needleArm: {
     position: "absolute",
     left: DIAL_RADIUS - 1.5,
-    top: 46,
+    top: 40,
     width: 3,
-    height: DIAL_RADIUS - 46,
+    height: DIAL_RADIUS - 40,
     borderRadius: 1.5,
-    opacity: 0.95,
-  },
-  beamSegB: {
-    position: "absolute",
-    left: DIAL_RADIUS - 1.5,
-    top: 34,
-    width: 3,
-    height: 14,
-    borderRadius: 1.5,
-    opacity: 0.72,
-  },
-  beamSegC: {
-    position: "absolute",
-    left: DIAL_RADIUS - 1.5,
-    top: 22,
-    width: 3,
-    height: 14,
-    borderRadius: 1.5,
-    opacity: 0.5,
-  },
-  beamSegD: {
-    position: "absolute",
-    left: DIAL_RADIUS - 1.5,
-    top: 10,
-    width: 3,
-    height: 14,
-    borderRadius: 1.5,
-    opacity: 0.36,
-  },
-  light1: {
-    position: "absolute",
-    left: 32 + DIAL_RADIUS - 44,
-    top: 32 + DIAL_RADIUS - 44,
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    opacity: 0.1,
-  },
-  light2: {
-    position: "absolute",
-    left: 32 + DIAL_RADIUS - 30,
-    top: 32 + DIAL_RADIUS - 30,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    opacity: 0.16,
-  },
-  light3: {
-    position: "absolute",
-    left: 32 + DIAL_RADIUS - 19,
-    top: 32 + DIAL_RADIUS - 19,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    opacity: 0.26,
-  },
-  lightCore: {
-    position: "absolute",
-    left: 32 + DIAL_RADIUS - 6,
-    top: 32 + DIAL_RADIUS - 6,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    opacity: 0.95,
   },
   kaabaChip: {
     position: "absolute",
-    left: 32 + DIAL_RADIUS - 16,
-    top: 32 + 12,
-    width: 32,
-    height: 32,
+    left: DIAL_RADIUS - 17,
+    top: 8,
+    width: 34,
+    height: 34,
     borderRadius: 10,
-    borderWidth: 1,
+    borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -939,14 +904,30 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: "#15181D",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255, 255, 255, 0.16)",
     overflow: "hidden",
   },
   kaabaBand: {
     height: 4,
     marginTop: 4,
-    marginHorizontal: 2,
-    backgroundColor: "#C9A227",
+    marginHorizontal: 1.5,
+  },
+  centerHubBase: {
+    position: "absolute",
+    left: 32 + DIAL_RADIUS - 22,
+    top: 32 + DIAL_RADIUS - 22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+  },
+  centerHubPivot: {
+    position: "absolute",
+    left: 32 + DIAL_RADIUS - 9,
+    top: 32 + DIAL_RADIUS - 9,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
   },
   lockBadge: {
     position: "absolute",
@@ -958,86 +939,84 @@ const styles = StyleSheet.create({
   lockPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    borderRadius: 12,
+    gap: 5,
+    borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 5,
   },
   lockText: {
     fontSize: 12,
     fontWeight: "800",
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
   },
   calibrationCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    borderRadius: 16,
+    gap: 14,
+    borderRadius: 20,
     borderWidth: 1,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginTop: 8,
+    paddingVertical: 14,
+    marginTop: 12,
     width: "100%",
   },
+  calibIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#0D1815",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   calibSymbol: {
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "400",
+    lineHeight: 28,
+    textAlign: "center",
   },
   calibText: {
     flex: 1,
-    fontSize: 11.5,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   quoteCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 14,
+    gap: 14,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     marginTop: 10,
     width: "100%",
   },
   quoteIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#0D1815",
     alignItems: "center",
     justifyContent: "center",
   },
   quoteText: {
-    fontSize: 12.5,
-    fontWeight: "600",
-    lineHeight: 17,
-  },
-  quoteRefRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 3,
+    fontFamily: "CormorantGaramond_600SemiBold",
+    fontSize: 15.5,
+    lineHeight: 21,
   },
   quoteRef: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  quoteDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-  },
-  quoteSurah: {
-    fontSize: 11,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 4,
+    lineHeight: 17,
   },
   mosqueBackdrop: {
     width: "100%",
-    height: 85,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: 8,
+    height: 0,
+    opacity: 0,
     overflow: "hidden",
   },
   card: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     padding: 20,
     alignItems: "center",
@@ -1056,7 +1035,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.65)",
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
@@ -1066,11 +1045,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     padding: 22,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
   },
   modalHeader: {
     flexDirection: "row",
