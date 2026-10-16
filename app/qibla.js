@@ -236,7 +236,8 @@ export default function QiblaScreen() {
     const trackMs = Math.min(Math.max(dt * 2, TRACK_ANIM_MS), TRACK_ANIM_MAX_MS);
     lastTickAtRef.current = now;
 
-    const magnetic = magnetometerToHeading(data);
+    // Invert the 180-degree axis offset so North is at 0° and South is at 180°
+    const magnetic = (magnetometerToHeading(data) + 180) % 360;
     const rawHeading =
       declinationRef.current != null
         ? (magnetic + declinationRef.current + 360) % 360
